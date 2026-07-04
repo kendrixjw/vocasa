@@ -407,33 +407,46 @@ export class Editor {
 
   // --- Rendering (single path) --------------------------------------------
   render(ctx: CanvasRenderingContext2D): void {
-    this.renderScene(ctx, this.viewport, this.size, true);
+    this.renderScene(ctx, this.viewport, this.size, { chrome: true, grid: true, background: COLOR_BG });
   }
 
   /**
    * Render the plan into an arbitrary context/size (e.g. an offscreen canvas for
-   * a dashboard thumbnail), fitting the whole plan and omitting overlays/selection.
+   * a dashboard thumbnail or a shareable export), fitting the whole plan and
+   * omitting overlays/selection. `grid` and `background` let exports render a
+   * clean, grid-free image on white.
    */
-  renderThumbnail(ctx: CanvasRenderingContext2D, width: number, height: number, dpr = 1): void {
+  renderThumbnail(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    dpr = 1,
+    opts?: { grid?: boolean; background?: string },
+  ): void {
     const vp = fitToBounds(extents(this.doc) ?? DEFAULT_BOUNDS, { width, height });
-    this.renderScene(ctx, vp, { width, height, dpr }, false);
+    this.renderScene(ctx, vp, { width, height, dpr }, {
+      chrome: false,
+      grid: opts?.grid ?? true,
+      background: opts?.background ?? COLOR_BG,
+    });
   }
 
   private renderScene(
     ctx: CanvasRenderingContext2D,
     vp: Viewport,
     size: { width: number; height: number; dpr: number },
-    withChrome: boolean,
+    opts: { chrome: boolean; grid: boolean; background: string },
   ): void {
     const { width, height, dpr } = size;
+    const withChrome = opts.chrome;
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = COLOR_BG;
+    ctx.fillStyle = opts.background;
     ctx.fillRect(0, 0, width, height);
 
-    this.drawGrid(ctx, vp, size);
+    if (opts.grid) this.drawGrid(ctx, vp, size);
 
     // Render order (per spec): rooms (filled tint + name + sqft) behind walls,
     // then walls, then later phases' doors/windows/furniture/labels.

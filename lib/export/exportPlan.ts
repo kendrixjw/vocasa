@@ -27,7 +27,8 @@ function renderToCanvas(editor: Editor): HTMLCanvasElement | null {
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  editor.renderThumbnail(ctx, width, height, 1);
+  // Clean shareable image: no grid, white background.
+  editor.renderThumbnail(ctx, width, height, 1, { grid: false, background: "#ffffff" });
   return canvas;
 }
 
