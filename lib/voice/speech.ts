@@ -109,12 +109,33 @@ export class VoiceRecognizer {
       if (final) this.handlers.onFinal?.(final.trim());
     };
     rec.onerror = (e) => {
-      const msg =
-        e.error === "not-allowed" || e.error === "service-not-allowed"
-          ? "Microphone access was blocked."
-          : e.error === "no-speech"
-            ? "I didn't hear anything."
-            : "Voice input error.";
+      // "aborted" fires when we stop()/abort() the recognizer ourselves — it's
+      // not a real failure, so don't surface it to the user.
+      if (e.error === "aborted") return;
+
+      let msg: string;
+      switch (e.error) {
+        case "not-allowed":
+        case "service-not-allowed":
+          msg = "Microphone access was blocked. Allow the mic in your browser and try again.";
+          break;
+        case "no-speech":
+          msg = "I didn't hear anything. Try again.";
+          break;
+        case "audio-capture":
+          msg = "No microphone was found. Check that one is connected.";
+          break;
+        case "network":
+          // Browser speech recognition relies on an online service (e.g. Google
+          // in Chrome); this is the usual culprit for a generic failure.
+          msg = "Voice service is unavailable right now. Check your connection, or type your command.";
+          break;
+        case "language-not-supported":
+          msg = "This browser can't recognize the current language. Try typing instead.";
+          break;
+        default:
+          msg = `Voice input error (${e.error || "unknown"}).`;
+      }
       this.handlers.onError?.(msg);
     };
     rec.onend = () => {
