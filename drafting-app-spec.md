@@ -258,7 +258,7 @@ core engine must exist first.
 **Phase 16 — Hand-sketch / existing floorplan photo → editable plan.**
 Upload a photo of a hand-drawn sketch OR an existing printed floorplan. Send
 as base64 to a vision-capable model with the op vocabulary from
-docs/voice-parser-packet.md; the model returns ops describing the walls,
+voice-parser-packet.md; the model returns ops describing the walls,
 rooms, doors, windows it sees. Because a photo alone has no scale, ALWAYS ask
 the user for one known dimension ("how wide is this wall / this door?") and
 scale all geometry from it. Show the generated plan as a preview the user
