@@ -1,5 +1,7 @@
 # Vocasa
 
+[![CI](https://github.com/kendrixjw/vocasa/actions/workflows/ci.yml/badge.svg)](https://github.com/kendrixjw/vocasa/actions/workflows/ci.yml)
+
 Voice-first home-sketching for homeowners. Say *"make a 15 by 20 living room"* or
 *"put a sofa against the north wall"* and it appears — labeled, measured, and
 editable by hand. Not a CAD tool: the goal is a friendly picture you can share,
