@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* Vocasa brand palette (spec: navy #1B2A4A, icon-tile gradient #2C4270→#131F3B). */
+@theme {
+  --color-brand: #1b2a4a;
+  --color-brand-hover: #2c4270;
+  --color-brand-50: #eef1f6;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}

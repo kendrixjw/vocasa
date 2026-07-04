@@ -1,0 +1,11 @@
+<!-- PLACEHOLDER — replace with the real Vocasa icon. Navy gradient tile (spec: #2C4270 → #131F3B). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Vocasa">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2C4270"/>
+      <stop offset="1" stop-color="#131F3B"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
+  <path d="M256 132 L400 254 L368 254 L368 388 L296 388 L296 300 L216 300 L216 388 L144 388 L144 254 L112 254 Z" fill="#ffffff"/>
+</svg>
