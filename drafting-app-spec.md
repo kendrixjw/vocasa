@@ -246,6 +246,40 @@ tile). Use the navy as the primary brand color in the chrome. Tagline text is
   undo step.
 - Version the JSON so future schema changes don't break saved plans.
 
+## Photo input — v2 phases (specified now so v1 doesn't block them)
+
+Photo upload is a core part of the product vision: users upload a picture and
+Vocasa turns it into an editable floorplan. It is deliberately sequenced AFTER
+the v1 voice hero, but it is NOT optional — build v1 so these phases slot in
+cleanly. The AI-op bridge from Phase 6 is reused: photos, like voice, produce
+the SAME op JSON (createRoom, addWall, placeFurniture...), which is why the
+core engine must exist first.
+
+**Phase 16 — Hand-sketch / existing floorplan photo → editable plan.**
+Upload a photo of a hand-drawn sketch OR an existing printed floorplan. Send
+as base64 to a vision-capable model with the op vocabulary from
+docs/voice-parser-packet.md; the model returns ops describing the walls,
+rooms, doors, windows it sees. Because a photo alone has no scale, ALWAYS ask
+the user for one known dimension ("how wide is this wall / this door?") and
+scale all geometry from it. Show the generated plan as a preview the user
+accepts before it commits (one ApplyAIBatch = one undo step). The result is a
+normal, fully editable Vocasa plan — the user can then refine it by voice or
+hand.
+
+**Phase 17 — Real-room photo → plan (scale honesty required).**
+Photos of real rooms lose depth/scale; never pretend otherwise. v2 web path:
+user marks ONE known reference dimension in the photo (e.g. "this door is 36
+inches") and the AI estimates the room layout relative to it, clearly labeled
+as an estimate the user should verify. True measured scale is the native iOS
+LiDAR/RoomPlan companion path — a later, separate effort.
+
+**Phase 18 — Bridge to the premium redesign modules.**
+Once a plan exists (from voice OR photo), the user can attach room photos and
+invoke the Design/Landscaping add-on modules (below) to generate restyled
+concepts. Flow: photo → floorplan (editable geometry) → redesign renders
+(visualization). Keep the two outputs distinct in the UI: plans are editable
+and to scale; redesign renders are inspirational images.
+
 ## Premium add-on modules (separate paid features — post-core, NOT v1)
 
 These are a DIFFERENT technical capability from the core engine. The core
@@ -271,8 +305,6 @@ modules since competitors bundle interior + exterior together.
 ## LATER roadmap — NOT v1
 
 In rough priority for THIS audience:
-- **Photo input:** hand-sketch → vectors; and real-room photos (note: true
-  scale needs a reference dimension or iOS LiDAR/RoomPlan — never fake scale).
 - **Style-reference photo** feeding decor suggestions.
 - **Richer decor:** paint colors, materials, mood boards, shopping links.
 - **Multi-room / whole-floor** plans and multiple floors.
