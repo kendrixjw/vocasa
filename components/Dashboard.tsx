@@ -51,6 +51,7 @@ export default function Dashboard({ user }: { user: User }) {
 
   const signOut = async () => {
     await getSupabaseBrowserClient()?.auth.signOut();
+    router.replace("/");
   };
 
   return (

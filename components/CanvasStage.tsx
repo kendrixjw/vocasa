@@ -397,7 +397,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
       {persisting && (
         <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-xl bg-white/95 px-2 py-1.5 shadow-lg ring-1 ring-neutral-200">
           <a
-            href="/"
+            href="/dashboard"
             title="Back to your plans"
             className="flex items-center gap-1.5 rounded-lg px-1 py-0.5 transition hover:bg-neutral-100"
           >

@@ -1,44 +1,57 @@
 "use client";
 
+// Public landing page. Anyone can view it and try the demo; saving requires an
+// account. CTAs adapt to whether you are signed in.
+
 import Link from "next/link";
-import AuthGate from "@/components/AuthGate";
-import Dashboard from "@/components/Dashboard";
 import { useSession } from "@/lib/supabase/useSession";
 
-export default function Home() {
+export default function Landing() {
   const { configured, loading, user } = useSession();
 
-  // Check loading FIRST so the initial render is identical on server & client.
-  if (loading) {
-    return <div className="flex h-screen w-screen items-center justify-center text-sm text-stone-500">Loading…</div>;
-  }
-
-  // Supabase not set up: run the app locally with no save/load.
-  if (!configured) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-stone-50 p-6">
-        <div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-lg ring-1 ring-stone-200">
-          <h1 className="text-2xl font-semibold text-stone-800">Vocasa</h1>
-          <p className="mt-2 text-sm text-stone-500">
-            Saving isn&apos;t configured yet, but you can still sketch. Add Supabase keys to enable your plan
-            dashboard.
-          </p>
-          <Link
-            href="/editor/local"
-            className="mt-6 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-hover"
-          >
-            Start sketching →
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) return <AuthGate />;
-
   return (
-    <div className="h-screen w-screen overflow-y-auto">
-      <Dashboard user={user} />
+    <div className="flex min-h-screen w-full flex-col items-center justify-center bg-stone-50 px-6 py-12 text-center">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/vocasa-lockup.png"
+        alt="Vocasa"
+        className="mb-6 h-[1600px] max-h-[80vh] w-auto max-w-full"
+      />
+      <p className="max-w-md text-base text-stone-600">
+        The voice-powered drafting app. Say &ldquo;make a 15 by 20 living room&rdquo; and watch it appear, labeled
+        and measured.
+      </p>
+
+      <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
+        {!configured ? (
+          <Link href="/editor/local" className="rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-hover">
+            Start sketching
+          </Link>
+        ) : loading ? (
+          <div className="h-10" />
+        ) : user ? (
+          <>
+            <Link href="/dashboard" className="rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-hover">
+              Go to your plans
+            </Link>
+            <Link href="/editor/local" className="rounded-lg px-6 py-2.5 text-sm font-medium text-brand ring-1 ring-stone-300 transition hover:bg-white">
+              Open the demo
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link href="/signup" className="rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-hover">
+              Get started
+            </Link>
+            <Link href="/login" className="rounded-lg px-6 py-2.5 text-sm font-medium text-brand ring-1 ring-stone-300 transition hover:bg-white">
+              Log in
+            </Link>
+            <Link href="/editor/local" className="text-sm text-stone-500 hover:text-brand hover:underline">
+              or try the demo
+            </Link>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -22,8 +22,8 @@ export default function EditorPage({ params }: { params: Promise<{ id: string }>
   const isLocal = explicitLocal || !configured;
 
   if (!isLocal && !user) {
-    // Not signed in — send them home to sign in.
-    router.replace("/");
+    // Not signed in — send them to log in and come back to this plan.
+    router.replace(`/login?next=/editor/${id}`);
     return null;
   }
 
