@@ -13,7 +13,7 @@ import {
   type Viewport,
 } from "./viewport.ts";
 import { pickGridSpacing } from "./grid.ts";
-import { createDocument, type Annotation, type Document, type Furniture, type Opening, type Room } from "./model/types.ts";
+import { createDocument, type Annotation, type Document, type Entity, type FloorInfo, type Furniture, type Opening, type Room } from "./model/types.ts";
 import { allEndpoints, annotations, dimensions, extents, furniture, openings, rooms, walls } from "./model/document.ts";
 import type { NamedPoint } from "./model/document.ts";
 import { drawWall } from "./model/wall.ts";
@@ -28,7 +28,7 @@ import type { Command } from "./history.ts";
 import { AddEntities, DeleteEntities, EditAnnotation, EditOpening, RenameRoom, SetFurnitureTransform } from "./commands.ts";
 import type { OpeningPatch } from "./commands.ts";
 import type { PointerInfo, Tool } from "./tools/tool.ts";
-import { PLAN_VERSION, type PlanData } from "./persistence/plan.ts";
+import { PLAN_VERSION, type FloorData, type PlanData } from "./persistence/plan.ts";
 import { SelectTool } from "./tools/select.ts";
 import { DrawWallTool } from "./tools/drawWall.ts";
 import { PlaceFurnitureTool } from "./tools/placeFurniture.ts";
@@ -151,23 +151,57 @@ export class Editor {
     return extents(this.doc) ?? DEFAULT_BOUNDS;
   }
 
-  /** Serialize the current plan for storage (version 1). */
+  /** Entities of every floor (active from doc.entities, others from stash). */
+  private floorEntities(id: string): Entity[] {
+    return id === this.doc.activeFloorId ? this.doc.entities : this.doc.stash[id] ?? [];
+  }
+
+  /** Serialize the current plan for storage (version 3, multi-floor). */
   serialize(): PlanData {
+    const floors: FloorData[] = this.doc.floors.map((f) => ({
+      id: f.id,
+      name: f.name,
+      entities: structuredClone(this.floorEntities(f.id)),
+    }));
     return {
       version: PLAN_VERSION,
       units: "imperial",
-      entities: structuredClone(this.doc.entities),
       viewport: { ...this.viewport },
+      floors,
+      activeFloorId: this.doc.activeFloorId,
     };
   }
 
   /** Replace the current plan from stored data. Clears history & selection. */
   load(data: PlanData): void {
     this.doc = createDocument();
-    this.doc.entities = structuredClone(data.entities);
-    // Adopt the saved viewport for non-empty plans; a fresh/empty plan fits to
-    // the default framing on first resize instead.
-    if (data.entities.length > 0 && data.viewport && data.viewport.scale > 0) {
+
+    // Normalize to the multi-floor form. Legacy v1/v2 saves have a single
+    // `entities` array -> load as one "Ground floor".
+    let floors: FloorData[];
+    let activeId: string;
+    if (data.floors && data.floors.length > 0) {
+      floors = data.floors.map((f) => ({ id: f.id, name: f.name, entities: structuredClone(f.entities) }));
+      activeId =
+        data.activeFloorId && floors.some((f) => f.id === data.activeFloorId)
+          ? data.activeFloorId
+          : floors[0].id;
+    } else {
+      const id = this.doc.floors[0].id;
+      floors = [{ id, name: "Ground floor", entities: structuredClone(data.entities ?? []) }];
+      activeId = id;
+    }
+
+    this.doc.floors = floors.map((f) => ({ id: f.id, name: f.name }));
+    this.doc.activeFloorId = activeId;
+    this.doc.stash = {};
+    for (const f of floors) {
+      if (f.id === activeId) this.doc.entities = f.entities;
+      else this.doc.stash[f.id] = f.entities;
+    }
+
+    const activeCount = this.doc.entities.length;
+    if (activeCount > 0 && data.viewport && data.viewport.scale > 0) {
       this.viewport = { ...data.viewport };
       this.fitted = true;
     } else {
@@ -333,6 +367,103 @@ export class Editor {
     }
     if (t === e.text) return;
     this.execute(new EditAnnotation(id, t));
+  }
+
+  // --- Floors --------------------------------------------------------------
+  // Switching floors swaps the active entity array (stash model) and resets
+  // history — undo does not cross floors (by design).
+
+  get floors(): FloorInfo[] {
+    return this.doc.floors;
+  }
+  get activeFloorId(): string {
+    return this.doc.activeFloorId;
+  }
+
+  private resetTransient(): void {
+    this.history = new History();
+    this.selection = new Set();
+    this.pending = null;
+  }
+
+  switchFloor(id: string): void {
+    if (id === this.doc.activeFloorId || !this.doc.floors.some((f) => f.id === id)) return;
+    this.doc.stash[this.doc.activeFloorId] = this.doc.entities;
+    this.doc.entities = this.doc.stash[id] ?? [];
+    delete this.doc.stash[id];
+    this.doc.activeFloorId = id;
+    this.resetTransient();
+    syncRooms(this.doc);
+    this._revision++;
+    this.onChange();
+    this.onDirty();
+  }
+
+  /** Add a new empty floor on top and switch to it. */
+  addFloor(name?: string): void {
+    const id = crypto.randomUUID();
+    const n = name?.trim() || `Floor ${this.doc.floors.length + 1}`;
+    this.doc.stash[this.doc.activeFloorId] = this.doc.entities;
+    this.doc.floors.push({ id, name: n });
+    this.doc.entities = [];
+    this.doc.activeFloorId = id;
+    this.resetTransient();
+    syncRooms(this.doc);
+    this._revision++;
+    this.onChange();
+    this.onDirty();
+  }
+
+  renameFloor(id: string, name: string): void {
+    const t = name.trim();
+    const f = this.doc.floors.find((x) => x.id === id);
+    if (!f || !t || f.name === t) return;
+    f.name = t;
+    this._revision++;
+    this.onChange();
+    this.onDirty();
+  }
+
+  /** Delete a floor (min one floor stays). Deleting the active floor switches
+   * to the one below it. */
+  deleteFloor(id: string): void {
+    if (this.doc.floors.length <= 1) return;
+    const idx = this.doc.floors.findIndex((f) => f.id === id);
+    if (idx < 0) return;
+    const wasActive = id === this.doc.activeFloorId;
+    this.doc.floors.splice(idx, 1);
+    delete this.doc.stash[id];
+    if (wasActive) {
+      const next = this.doc.floors[Math.max(0, idx - 1)];
+      this.doc.entities = this.doc.stash[next.id] ?? [];
+      delete this.doc.stash[next.id];
+      this.doc.activeFloorId = next.id;
+      this.resetTransient();
+      syncRooms(this.doc);
+    }
+    this._revision++;
+    this.onChange();
+    this.onDirty();
+  }
+
+  /** Move a floor up (+1) or down (-1) in the stack; affects underlay order. */
+  moveFloor(id: string, dir: -1 | 1): void {
+    const idx = this.doc.floors.findIndex((f) => f.id === id);
+    const j = idx + dir;
+    if (idx < 0 || j < 0 || j >= this.doc.floors.length) return;
+    const arr = this.doc.floors;
+    [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    this._revision++;
+    this.onChange();
+    this.onDirty();
+  }
+
+  /** Entities of the floor directly below the active one (ghost underlay). */
+  private underlayEntities(): Entity[] | null {
+    const idx = this.doc.floors.findIndex((f) => f.id === this.doc.activeFloorId);
+    if (idx <= 0) return null;
+    const below = this.doc.floors[idx - 1];
+    return this.doc.stash[below.id] ?? [];
   }
 
   /** The single selected door/window, if any (for the panel). */
@@ -516,6 +647,13 @@ export class Editor {
 
     if (opts.grid) this.drawGrid(ctx, vp, size);
 
+    // Ghost of the floor below (interactive view only), for cross-floor
+    // alignment. Drawn faint, beneath the active floor's geometry.
+    if (withChrome) {
+      const below = this.underlayEntities();
+      if (below) this.drawUnderlay(ctx, below, vp);
+    }
+
     // Render order (per spec): rooms (filled tint + name + sqft) behind walls,
     // then walls, then later phases' doors/windows/furniture/labels.
     const sel = (id: string) => withChrome && this.selection.has(id);
@@ -544,6 +682,24 @@ export class Editor {
     // Overlays: in-progress entity, snap markers, guides (interactive only).
     if (withChrome) this.tool.drawOverlay?.(ctx, this);
 
+    ctx.restore();
+  }
+
+  /** Faint outline of the floor below: wall segments only, no fills or labels. */
+  private drawUnderlay(ctx: CanvasRenderingContext2D, entities: Entity[], vp: Viewport): void {
+    ctx.save();
+    ctx.strokeStyle = "rgba(120,113,108,0.28)"; // stone-500 @ ~28%
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 5]);
+    for (const e of entities) {
+      if (e.type !== "wall") continue;
+      const a = worldToScreen(vp, e.a);
+      const b = worldToScreen(vp, e.b);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

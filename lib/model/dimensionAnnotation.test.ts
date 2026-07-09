@@ -70,7 +70,7 @@ test("serialized plans round-trip dimensions and annotations", () => {
     ]),
   );
   const data = src.serialize();
-  assert.equal(data.version, 2);
+  assert.equal(data.version, 3);
 
   const dst = new Editor();
   dst.load(data);

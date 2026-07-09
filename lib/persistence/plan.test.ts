@@ -18,14 +18,35 @@ function seedRoom(editor: Editor) {
   if (res.kind === "ops") editor.execute(res.command);
 }
 
-test("serialize produces versioned plan data", () => {
+test("serialize produces versioned multi-floor plan data", () => {
   const e = new Editor();
   seedRoom(e);
   const data = e.serialize();
   assert.equal(data.version, PLAN_VERSION);
   assert.equal(data.units, "imperial");
   assert.ok(isPlanData(data));
-  assert.ok(data.entities.length >= 5); // 4 walls + room + sofa
+  assert.ok(data.floors && data.floors.length === 1);
+  assert.equal(data.activeFloorId, data.floors![0].id);
+  assert.ok(data.floors![0].entities.length >= 5); // 4 walls + room + sofa
+});
+
+test("loads legacy single-floor (v2) plans as one Ground floor", () => {
+  const src = new Editor();
+  seedRoom(src);
+  const v3 = src.serialize();
+  // Simulate a legacy v2 save: single `entities` array, no floors.
+  const legacy = {
+    version: 2,
+    units: "imperial" as const,
+    viewport: v3.viewport,
+    entities: v3.floors![0].entities,
+  };
+  assert.ok(isPlanData(legacy));
+  const dst = new Editor();
+  dst.load(legacy);
+  assert.equal(dst.floors.length, 1);
+  assert.equal(dst.floors[0].name, "Ground floor");
+  assert.equal(rooms(dst.doc).length, 1);
 });
 
 test("load restores a serialized plan into a fresh editor", () => {

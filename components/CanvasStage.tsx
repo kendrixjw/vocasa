@@ -878,6 +878,11 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
         />
       </div>
 
+      {/* Bottom-right: floor switcher */}
+      <div className="absolute bottom-16 right-3">
+        <FloorSwitcher editor={editor} onChange={forceHud} />
+      </div>
+
       {/* Top-right: history + fit */}
       <div className="absolute right-3 top-3 flex items-center gap-2">
         <ChromeButton onClick={() => editor.undo()} disabled={!editor.canUndo} title="Undo (Ctrl+Z)">
@@ -1264,6 +1269,102 @@ function ToolButton({
     >
       {children}
     </button>
+  );
+}
+
+function FloorSwitcher({ editor, onChange }: { editor: Editor; onChange: () => void }) {
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  const floors = editor.floors;
+  const activeId = editor.activeFloorId;
+  // Display highest floor first (editor.floors is ordered low -> high).
+  const topFirst = [...floors].reverse();
+
+  const act = (fn: () => void) => {
+    fn();
+    onChange();
+  };
+
+  return (
+    <div className="w-44 rounded-xl bg-white/95 p-2 shadow-lg ring-1 ring-neutral-200">
+      <div className="mb-1 flex items-center justify-between px-1">
+        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Floors</span>
+        <button
+          onClick={() => act(() => editor.addFloor())}
+          title="Add a floor on top"
+          className="rounded px-1.5 py-0.5 text-xs font-medium text-brand ring-1 ring-brand/30 transition hover:bg-brand/5"
+        >
+          + Add
+        </button>
+      </div>
+      <div className="flex flex-col gap-1">
+        {topFirst.map((f) => {
+          const isActive = f.id === activeId;
+          const idx = floors.findIndex((x) => x.id === f.id);
+          return (
+            <div
+              key={f.id}
+              className={`flex items-center gap-1 rounded-lg px-1.5 py-1 text-sm ring-1 ${
+                isActive ? "bg-brand text-white ring-brand" : "bg-white text-neutral-700 ring-neutral-200"
+              }`}
+            >
+              {renaming?.id === f.id ? (
+                <input
+                  autoFocus
+                  value={renaming.value}
+                  onChange={(e) => setRenaming({ id: f.id, value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      act(() => editor.renameFloor(f.id, renaming.value));
+                      setRenaming(null);
+                    } else if (e.key === "Escape") {
+                      setRenaming(null);
+                    }
+                  }}
+                  onBlur={() => {
+                    act(() => editor.renameFloor(f.id, renaming.value));
+                    setRenaming(null);
+                  }}
+                  className="min-w-0 flex-1 rounded border border-neutral-300 px-1 py-0.5 text-sm text-neutral-800 outline-none"
+                />
+              ) : (
+                <button
+                  onClick={() => act(() => editor.switchFloor(f.id))}
+                  onDoubleClick={() => setRenaming({ id: f.id, value: f.name })}
+                  title="Click to switch, double-click to rename"
+                  className="min-w-0 flex-1 truncate text-left font-medium"
+                >
+                  {f.name}
+                </button>
+              )}
+              <button
+                onClick={() => act(() => editor.moveFloor(f.id, 1))}
+                disabled={idx >= floors.length - 1}
+                title="Move up"
+                className={`px-0.5 text-xs disabled:opacity-30 ${isActive ? "text-white/90" : "text-neutral-400 hover:text-neutral-700"}`}
+              >
+                ▲
+              </button>
+              <button
+                onClick={() => act(() => editor.moveFloor(f.id, -1))}
+                disabled={idx <= 0}
+                title="Move down"
+                className={`px-0.5 text-xs disabled:opacity-30 ${isActive ? "text-white/90" : "text-neutral-400 hover:text-neutral-700"}`}
+              >
+                ▼
+              </button>
+              <button
+                onClick={() => act(() => editor.deleteFloor(f.id))}
+                disabled={floors.length <= 1}
+                title="Delete floor"
+                className={`px-0.5 text-xs disabled:opacity-30 ${isActive ? "text-white/90" : "text-neutral-400 hover:text-red-600"}`}
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

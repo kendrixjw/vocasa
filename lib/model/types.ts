@@ -80,12 +80,29 @@ export type Annotation = EntityBase & {
 export type Entity = Wall | Room | Furniture | Door | Window | Dimension | Annotation;
 export type Opening = Door | Window;
 
+// A floor is a named layer of the plan. Ordered low → high (index 0 is the
+// lowest floor). The ACTIVE floor's entities live in `Document.entities` so all
+// tools/commands/rooms operate on it unchanged; inactive floors are held in
+// `Document.stash` keyed by floor id and swapped in on switch.
+export type FloorInfo = { id: string; name: string };
+
 export type Document = {
   version: 1;
   units: "imperial";
-  entities: Entity[];
+  entities: Entity[]; // the active floor's live entities
+  floors: FloorInfo[]; // all floors, ordered low → high
+  activeFloorId: string;
+  stash: Record<string, Entity[]>; // non-active floors' entities, by floor id
 };
 
 export function createDocument(): Document {
-  return { version: 1, units: "imperial", entities: [] };
+  const id = crypto.randomUUID();
+  return {
+    version: 1,
+    units: "imperial",
+    entities: [],
+    floors: [{ id, name: "Ground floor" }],
+    activeFloorId: id,
+    stash: {},
+  };
 }
