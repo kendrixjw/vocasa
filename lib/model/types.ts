@@ -56,8 +56,28 @@ export type Window = EntityBase & {
   width: number;
 };
 
+// A dimension line: measures the distance between two world points. Endpoints
+// snap to wall corners when drawn but store absolute coordinates (snap-on-place,
+// like furniture) — they do not track walls afterward. `offset` shifts the line
+// perpendicular to the measured span (inches); 0 draws it on the span.
+export type Dimension = EntityBase & {
+  type: "dimension";
+  from: Point;
+  to: Point;
+  offset: number;
+};
+
+// A free text note placed on the canvas. `position` is the anchor (world
+// inches); `rotation` is in radians (reserved; 0 for now).
+export type Annotation = EntityBase & {
+  type: "annotation";
+  position: Point;
+  text: string;
+  rotation: number;
+};
+
 // The union grows in later phases (label).
-export type Entity = Wall | Room | Furniture | Door | Window;
+export type Entity = Wall | Room | Furniture | Door | Window | Dimension | Annotation;
 export type Opening = Door | Window;
 
 export type Document = {

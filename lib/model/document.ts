@@ -1,7 +1,7 @@
 // Document-level queries. Mutations go through commands (lib/commands.ts).
 
 import type { Bounds, Point } from "../viewport.ts";
-import type { Document, Entity, Furniture, Opening, Room, Wall } from "./types.ts";
+import type { Annotation, Dimension, Document, Entity, Furniture, Opening, Room, Wall } from "./types.ts";
 import { wallBounds, wallEndpoints } from "./wall.ts";
 import { furnitureBounds } from "./furniture.ts";
 
@@ -23,6 +23,14 @@ export function furniture(doc: Document): Furniture[] {
 
 export function openings(doc: Document): Opening[] {
   return doc.entities.filter((e): e is Opening => e.type === "door" || e.type === "window");
+}
+
+export function dimensions(doc: Document): Dimension[] {
+  return doc.entities.filter((e): e is Dimension => e.type === "dimension");
+}
+
+export function annotations(doc: Document): Annotation[] {
+  return doc.entities.filter((e): e is Annotation => e.type === "annotation");
 }
 
 /** An endpoint of some entity, tagged with its owner (for snap/join). */
@@ -55,5 +63,11 @@ export function extents(doc: Document): Bounds | null {
   };
   for (const w of walls(doc)) merge(wallBounds(w));
   for (const f of furniture(doc)) merge(furnitureBounds(f));
+  const pt = (p: Point) => merge({ minX: p.x, minY: p.y, maxX: p.x, maxY: p.y });
+  for (const d of dimensions(doc)) {
+    pt(d.from);
+    pt(d.to);
+  }
+  for (const a of annotations(doc)) pt(a.position);
   return b;
 }

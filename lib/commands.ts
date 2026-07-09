@@ -154,6 +154,30 @@ export class EditOpening implements Command {
   }
 }
 
+/** Set an annotation's text (undoable). Empty text deletes nothing here — the
+ * caller decides whether to delete an emptied note. */
+export class EditAnnotation implements Command {
+  readonly label = "Edit note";
+  private readonly id: string;
+  private readonly newText: string;
+  private oldText = "";
+  constructor(id: string, newText: string) {
+    this.id = id;
+    this.newText = newText;
+  }
+  do(doc: Document): void {
+    const e = doc.entities.find((x) => x.id === this.id);
+    if (e && e.type === "annotation") {
+      this.oldText = e.text;
+      e.text = this.newText;
+    }
+  }
+  undo(doc: Document): void {
+    const e = doc.entities.find((x) => x.id === this.id);
+    if (e && e.type === "annotation") e.text = this.oldText;
+  }
+}
+
 /** Translate a set of entities by a world-space delta (inches). */
 export class TranslateEntities implements Command {
   readonly label = "Move";
@@ -167,13 +191,23 @@ export class TranslateEntities implements Command {
   }
   private shift(doc: Document, sign: number): void {
     const idset = new Set(this.ids);
+    const ddx = this.dx * sign;
+    const ddy = this.dy * sign;
     for (const e of doc.entities) {
       if (!idset.has(e.id)) continue;
       if (e.type === "wall") {
-        e.a.x += this.dx * sign;
-        e.a.y += this.dy * sign;
-        e.b.x += this.dx * sign;
-        e.b.y += this.dy * sign;
+        e.a.x += ddx;
+        e.a.y += ddy;
+        e.b.x += ddx;
+        e.b.y += ddy;
+      } else if (e.type === "dimension") {
+        e.from.x += ddx;
+        e.from.y += ddy;
+        e.to.x += ddx;
+        e.to.y += ddy;
+      } else if (e.type === "annotation") {
+        e.position.x += ddx;
+        e.position.y += ddy;
       }
     }
   }

@@ -157,6 +157,13 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   // A picked file awaiting the user's choice of what kind of image it is.
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
+  // Inline text-note editor (Phase: dimensions & annotations). Open when the
+  // annotation tool is placing a note or a note is double-clicked to edit.
+  const [textEdit, setTextEdit] = useState<
+    { id?: string; world: Point; left: number; top: number; value: string } | null
+  >(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+
   const previewPhotoAt = useCallback(
     (ops: Op[], widthFt: number) => {
       const cmd = buildPhotoCommand(editor, ops, Math.max(1, widthFt) * 12);
@@ -330,7 +337,28 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
       dirtyRef.current = true;
     };
     editor.onChange = () => forceHud();
+    editor.onRequestText = (req) => {
+      const s = editor.toScreen(req.world);
+      setTextEdit({ id: req.id, world: req.world, left: s.x, top: s.y, value: req.text });
+    };
   }, [editor]);
+
+  // Focus the note input when it opens.
+  useEffect(() => {
+    if (textEdit) textInputRef.current?.focus();
+  }, [textEdit]);
+
+  const commitText = useCallback(() => {
+    setTextEdit((te) => {
+      if (!te) return null;
+      const v = te.value.trim();
+      if (te.id) editor.setAnnotationText(te.id, v);
+      else if (v) editor.addAnnotation(te.world, v);
+      return null;
+    });
+  }, [editor]);
+
+  const cancelText = useCallback(() => setTextEdit(null), []);
 
   // --- rAF render loop (single render path) --------------------------------
   useEffect(() => {
@@ -376,7 +404,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   }, [applySize]);
 
   // --- Pointer input -------------------------------------------------------
-  const localPoint = (e: React.PointerEvent | React.WheelEvent): Point => {
+  const localPoint = (e: React.PointerEvent | React.WheelEvent | React.MouseEvent): Point => {
     const rect = canvasRef.current!.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
@@ -422,6 +450,11 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
       return;
     }
     editor.pointerUp(toInfo(e, p));
+  };
+
+  const onDoubleClick = (e: React.MouseEvent) => {
+    const p = localPoint(e);
+    editor.editAnnotationAt(p);
   };
 
   const onWheel = (e: React.WheelEvent) => {
@@ -480,9 +513,32 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onDoubleClick={onDoubleClick}
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
+
+      {/* Inline text-note editor */}
+      {textEdit && (
+        <input
+          ref={textInputRef}
+          value={textEdit.value}
+          onChange={(e) => setTextEdit((te) => (te ? { ...te, value: e.target.value } : te))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitText();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancelText();
+            }
+          }}
+          onBlur={commitText}
+          placeholder="Type a note…"
+          className="absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-md border border-brand bg-white px-2 py-1 text-sm text-neutral-800 shadow-lg outline-none"
+          style={{ left: textEdit.left, top: textEdit.top, minWidth: 120 }}
+        />
+      )}
 
       {/* Top-left: plan name + save status (only when saving is available) */}
       {persisting && (
@@ -797,6 +853,20 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             title="Add window"
           >
             Window
+          </ToolButton>
+          <ToolButton
+            active={editor.activeTool === "dimension"}
+            onClick={() => editor.setTool("dimension")}
+            title="Measure a dimension (D)"
+          >
+            Dimension
+          </ToolButton>
+          <ToolButton
+            active={editor.activeTool === "annotation"}
+            onClick={() => editor.setTool("annotation")}
+            title="Add a text note (T)"
+          >
+            Note
           </ToolButton>
         </div>
         <FurniturePalette

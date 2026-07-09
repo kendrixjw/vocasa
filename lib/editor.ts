@@ -13,17 +13,19 @@ import {
   type Viewport,
 } from "./viewport.ts";
 import { pickGridSpacing } from "./grid.ts";
-import { createDocument, type Document, type Furniture, type Opening, type Room } from "./model/types.ts";
-import { allEndpoints, extents, furniture, openings, rooms, walls } from "./model/document.ts";
+import { createDocument, type Annotation, type Document, type Furniture, type Opening, type Room } from "./model/types.ts";
+import { allEndpoints, annotations, dimensions, extents, furniture, openings, rooms, walls } from "./model/document.ts";
 import type { NamedPoint } from "./model/document.ts";
 import { drawWall } from "./model/wall.ts";
 import { drawRoom, pointInRoom } from "./model/room.ts";
 import { drawFurniture, MIN_FURNITURE_SIZE } from "./model/furniture.ts";
 import { drawOpening, findWall } from "./model/opening.ts";
+import { drawDimension } from "./model/dimension.ts";
+import { createAnnotation, drawAnnotation, hitTestAnnotation } from "./model/annotation.ts";
 import { syncRooms } from "./rooms/sync.ts";
 import { History } from "./history.ts";
 import type { Command } from "./history.ts";
-import { DeleteEntities, EditOpening, RenameRoom, SetFurnitureTransform } from "./commands.ts";
+import { AddEntities, DeleteEntities, EditAnnotation, EditOpening, RenameRoom, SetFurnitureTransform } from "./commands.ts";
 import type { OpeningPatch } from "./commands.ts";
 import type { PointerInfo, Tool } from "./tools/tool.ts";
 import { PLAN_VERSION, type PlanData } from "./persistence/plan.ts";
@@ -31,6 +33,11 @@ import { SelectTool } from "./tools/select.ts";
 import { DrawWallTool } from "./tools/drawWall.ts";
 import { PlaceFurnitureTool } from "./tools/placeFurniture.ts";
 import { PlaceOpeningTool } from "./tools/placeOpening.ts";
+import { DimensionTool } from "./tools/drawDimension.ts";
+import { AnnotationTool } from "./tools/placeAnnotation.ts";
+
+/** A request from the annotation tool for the host to open a text editor. */
+export type TextEditRequest = { id?: string; world: Point; text: string };
 
 // Framing used by fit-to-extents when the document is empty (40ft x 30ft).
 const DEFAULT_BOUNDS: Bounds = { minX: 0, minY: 0, maxX: 480, maxY: 360 };
@@ -58,6 +65,8 @@ export class Editor {
   onDirty: () => void = () => {};
   /** Set by the host: structural change (tool/selection/history/status). */
   onChange: () => void = () => {};
+  /** Set by the host: open an inline text editor for a note. */
+  onRequestText: (req: TextEditRequest) => void = () => {};
 
   constructor() {
     this.tools = {
@@ -65,6 +74,8 @@ export class Editor {
       wall: new DrawWallTool(),
       place: new PlaceFurnitureTool(),
       opening: new PlaceOpeningTool(),
+      dimension: new DimensionTool(),
+      annotation: new AnnotationTool(),
     };
   }
 
@@ -109,6 +120,9 @@ export class Editor {
   }
   toWorld(screen: Point): Point {
     return screenToWorld(this.viewport, screen);
+  }
+  toScreen(world: Point): Point {
+    return worldToScreen(this.viewport, world);
   }
 
   /** World point used as the "cursor" for typed/voice AI commands: viewport center. */
@@ -275,6 +289,52 @@ export class Editor {
     this.setTool("opening");
   }
 
+  // --- Annotations (text notes) -------------------------------------------
+
+  /** Called by the annotation tool: ask the host to open a text editor for a
+   * new note at `world`. */
+  requestAnnotation(world: Point): void {
+    this.onRequestText({ world: { ...world }, text: "" });
+  }
+
+  /** The topmost annotation hit at the given screen/world point, if any. */
+  annotationAt(screen: Point): Annotation | null {
+    const as = annotations(this.doc);
+    for (let i = as.length - 1; i >= 0; i--) {
+      if (hitTestAnnotation(as[i], screen, this.viewport)) return as[i];
+    }
+    return null;
+  }
+
+  /** Double-click on a note: ask the host to edit its text in place. */
+  editAnnotationAt(screen: Point): boolean {
+    const a = this.annotationAt(screen);
+    if (!a) return false;
+    this.onRequestText({ id: a.id, world: { ...a.position }, text: a.text });
+    return true;
+  }
+
+  /** Commit a new note (no-op if blank). */
+  addAnnotation(world: Point, text: string): void {
+    const t = text.trim();
+    if (!t) return;
+    this.execute(new AddEntities([createAnnotation(world, t)]));
+  }
+
+  /** Commit an edit to an existing note; blank text deletes it. */
+  setAnnotationText(id: string, text: string): void {
+    const e = this.doc.entities.find((x) => x.id === id);
+    if (!e || e.type !== "annotation") return;
+    const t = text.trim();
+    if (!t) {
+      this.selection.delete(id);
+      this.execute(new DeleteEntities([id]));
+      return;
+    }
+    if (t === e.text) return;
+    this.execute(new EditAnnotation(id, t));
+  }
+
   /** The single selected door/window, if any (for the panel). */
   get selectedOpening(): Opening | null {
     if (this.selection.size !== 1) return null;
@@ -401,6 +461,14 @@ export class Editor {
       this.setTool("wall");
       return true;
     }
+    if (!mod && (e.key === "d" || e.key === "D")) {
+      this.setTool("dimension");
+      return true;
+    }
+    if (!mod && (e.key === "t" || e.key === "T")) {
+      this.setTool("annotation");
+      return true;
+    }
     this.tool.onKeyDown?.(e.key, this);
     return false;
   }
@@ -464,6 +532,13 @@ export class Editor {
     }
     for (const f of furniture(this.doc)) {
       drawFurniture(ctx, f, vp, { selected: sel(f.id) });
+    }
+    // Dimensions and text notes draw on top of the plan.
+    for (const d of dimensions(this.doc)) {
+      drawDimension(ctx, d, vp, { selected: sel(d.id) });
+    }
+    for (const a of annotations(this.doc)) {
+      drawAnnotation(ctx, a, vp, { selected: sel(a.id) });
     }
 
     // Overlays: in-progress entity, snap markers, guides (interactive only).

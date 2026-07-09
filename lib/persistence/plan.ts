@@ -5,7 +5,9 @@
 import type { Entity } from "../model/types.ts";
 import type { Viewport } from "../viewport.ts";
 
-export const PLAN_VERSION = 1 as const;
+// v2 added dimension + annotation entities. The change is purely additive, so
+// v1 plans load unchanged (validation only checks shape, not entity types).
+export const PLAN_VERSION = 2 as const;
 
 export type PlanData = {
   version: number;

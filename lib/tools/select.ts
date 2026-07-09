@@ -6,11 +6,13 @@
 import { worldToScreen, type Point } from "../viewport.ts";
 import { EditOpening, SetFurnitureTransform, TranslateEntities } from "../commands.ts";
 import type { FurnitureTransform } from "../commands.ts";
-import { openings, rooms, walls } from "../model/document.ts";
+import { annotations, dimensions, openings, rooms, walls } from "../model/document.ts";
 import { hitTestWall } from "../model/wall.ts";
 import { pointInRoom } from "../model/room.ts";
 import { clampOffset, findWall, hitTestOpening, projectOffset } from "../model/opening.ts";
-import type { Opening } from "../model/types.ts";
+import { hitTestDimension } from "../model/dimension.ts";
+import { hitTestAnnotation } from "../model/annotation.ts";
+import type { Annotation, Dimension, Opening } from "../model/types.ts";
 import {
   corners,
   furnitureHandles,
@@ -56,7 +58,17 @@ type OpeningDrag = {
   moved: boolean;
 };
 
-type Drag = WallDrag | FurnDrag | OpeningDrag;
+// Generic translate for dimensions and annotations (absolute-coordinate types).
+type EntityMoveOrig = { from?: Point; to?: Point; position?: Point };
+type EntityDrag = {
+  mode: "entity-move";
+  origin: Point;
+  ids: string[];
+  originals: Map<string, EntityMoveOrig>;
+  moved: boolean;
+};
+
+type Drag = WallDrag | FurnDrag | OpeningDrag | EntityDrag;
 
 function tf(f: Furniture): FurnitureTransform {
   return { position: { ...f.position }, rotation: f.rotation, w: f.w, h: f.h };
@@ -102,6 +114,34 @@ export class SelectTool implements Tool {
     return null;
   }
 
+  private topAnnotationAt(ed: Editor, screen: Point): Annotation | null {
+    const as = annotations(ed.doc);
+    for (let i = as.length - 1; i >= 0; i--) {
+      if (hitTestAnnotation(as[i], screen, ed.viewport)) return as[i];
+    }
+    return null;
+  }
+
+  private topDimensionAt(ed: Editor, p: Point): Dimension | null {
+    const tol = ed.snapThresholdWorld();
+    const ds = dimensions(ed.doc);
+    for (let i = ds.length - 1; i >= 0; i--) if (hitTestDimension(ds[i], p, tol)) return ds[i];
+    return null;
+  }
+
+  /** Begin translating a dimension or annotation (absolute-coordinate types). */
+  private startEntityMove(ed: Editor, id: string, origin: Point): void {
+    if (!ed.selection.has(id)) ed.setSelection([id]);
+    const originals = new Map<string, EntityMoveOrig>();
+    for (const e of ed.doc.entities) {
+      if (!ed.selection.has(e.id)) continue;
+      if (e.type === "dimension") originals.set(e.id, { from: { ...e.from }, to: { ...e.to } });
+      else if (e.type === "annotation") originals.set(e.id, { position: { ...e.position } });
+    }
+    this.drag = { mode: "entity-move", origin, ids: [...originals.keys()], originals, moved: false };
+    ed.markDirty();
+  }
+
   onPointerDown(e: PointerInfo, ed: Editor): void {
     if (e.button !== 0) return;
 
@@ -131,7 +171,14 @@ export class SelectTool implements Tool {
       }
     }
 
-    // 2. Furniture under cursor -> select + move.
+    // 2. Text note under cursor (drawn on top) -> select + move.
+    const note = this.topAnnotationAt(ed, e.screen);
+    if (note) {
+      this.startEntityMove(ed, note.id, e.world);
+      return;
+    }
+
+    // 3. Furniture under cursor -> select + move.
     const furn = this.topFurnitureAt(ed, e.world);
     if (furn) {
       if (!ed.selection.has(furn.id)) ed.setSelection([furn.id]);
@@ -146,6 +193,13 @@ export class SelectTool implements Tool {
       if (!ed.selection.has(opening.id)) ed.setSelection([opening.id]);
       this.drag = { mode: "opening-move", id: opening.id, beforeOffset: opening.offset, moved: false };
       ed.markDirty();
+      return;
+    }
+
+    // Dimension line under cursor -> select + move.
+    const dim = this.topDimensionAt(ed, e.world);
+    if (dim) {
+      this.startEntityMove(ed, dim.id, e.world);
       return;
     }
 
@@ -197,6 +251,25 @@ export class SelectTool implements Tool {
           ed.markDirty();
         }
       }
+      return;
+    }
+
+    if (d.mode === "entity-move") {
+      const dx = e.world.x - d.origin.x;
+      const dy = e.world.y - d.origin.y;
+      if (!d.moved && Math.hypot(dx, dy) < ed.snapThresholdWorld() * 0.5) return;
+      d.moved = true;
+      for (const e2 of ed.doc.entities) {
+        const orig = d.originals.get(e2.id);
+        if (!orig) continue;
+        if (e2.type === "dimension" && orig.from && orig.to) {
+          e2.from = { x: orig.from.x + dx, y: orig.from.y + dy };
+          e2.to = { x: orig.to.x + dx, y: orig.to.y + dy };
+        } else if (e2.type === "annotation" && orig.position) {
+          e2.position = { x: orig.position.x + dx, y: orig.position.y + dy };
+        }
+      }
+      ed.markDirty();
       return;
     }
 
@@ -296,6 +369,40 @@ export class SelectTool implements Tool {
         op.offset = d.beforeOffset; // restore, then commit one clean command
         if (Math.abs(after - d.beforeOffset) > 1e-6) ed.execute(new EditOpening(d.id, { offset: after }));
       }
+      ed.markDirty();
+      return;
+    }
+
+    if (d.mode === "entity-move") {
+      if (!d.moved) {
+        ed.markDirty();
+        return;
+      }
+      // Net delta from any moved entity, then restore + commit one command.
+      let dx = 0;
+      let dy = 0;
+      for (const e2 of ed.doc.entities) {
+        const orig = d.originals.get(e2.id);
+        if (!orig) continue;
+        if (e2.type === "dimension" && orig.from) {
+          dx = e2.from.x - orig.from.x;
+          dy = e2.from.y - orig.from.y;
+        } else if (e2.type === "annotation" && orig.position) {
+          dx = e2.position.x - orig.position.x;
+          dy = e2.position.y - orig.position.y;
+        }
+      }
+      for (const e2 of ed.doc.entities) {
+        const orig = d.originals.get(e2.id);
+        if (!orig) continue;
+        if (e2.type === "dimension" && orig.from && orig.to) {
+          e2.from = { ...orig.from };
+          e2.to = { ...orig.to };
+        } else if (e2.type === "annotation" && orig.position) {
+          e2.position = { ...orig.position };
+        }
+      }
+      if (Math.hypot(dx, dy) > 1e-6) ed.execute(new TranslateEntities(d.ids, dx, dy));
       ed.markDirty();
       return;
     }
