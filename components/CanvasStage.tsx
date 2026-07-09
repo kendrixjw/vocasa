@@ -16,6 +16,8 @@ import { getPlan, updatePlan } from "@/lib/persistence/plans";
 import { isPlanData } from "@/lib/persistence/plan";
 import { makeThumbnail } from "@/lib/persistence/thumbnail";
 import { exportPng, exportPdf } from "@/lib/export/exportPlan";
+import RedesignBridge from "@/components/RedesignBridge";
+import { rooms, walls } from "@/lib/model/document";
 
 type PersistenceProps = {
   /** When set (and enabled), the plan loads from / autosaves to this row. */
@@ -310,6 +312,8 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   // Debounced autosave: watch the content revision (re-read each render via HUD)
   // and the plan name.
   const revision = editor.revision;
+  // Re-derived each HUD bump; gates the Phase 18 redesign bridge.
+  const hasPlan = rooms(editor.doc).length > 0 || walls(editor.doc).length > 0;
   useEffect(() => {
     if (!persisting || !loadedRef.current) return;
     if (editor.hasPreview) return; // don't persist an un-accepted preview
@@ -618,6 +622,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             <SparkleIcon />
             {assistBusy ? "Thinking…" : "Design assist"}
           </button>
+          <RedesignBridge hasPlan={hasPlan} />
         </div>
 
         {/* Photo import: ask what kind of image was picked */}
