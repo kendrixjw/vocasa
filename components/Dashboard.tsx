@@ -6,8 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { createPlan, deletePlan, listPlans, type PlanSummary } from "@/lib/persistence/plans";
+import { createPlan, deletePlan, listPlans, setShareToken, type PlanSummary } from "@/lib/persistence/plans";
 import { blankPlan } from "@/lib/persistence/blank";
+import { siteUrl } from "@/lib/supabase/config";
 
 export default function Dashboard({ user }: { user: User }) {
   const router = useRouter();
@@ -36,6 +37,39 @@ export default function Dashboard({ user }: { user: User }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't create a plan.");
       setCreating(false);
+    }
+  };
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const patchPlan = (id: string, token: string | null) =>
+    setPlans((p) => (p ? p.map((x) => (x.id === id ? { ...x, share_token: token } : x)) : p));
+
+  const share = async (id: string) => {
+    try {
+      const token = crypto.randomUUID();
+      await setShareToken(id, token);
+      patchPlan(id, token);
+      await navigator.clipboard?.writeText(`${siteUrl()}/share/${token}`);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't create a share link.");
+    }
+  };
+
+  const copyLink = async (id: string, token: string) => {
+    await navigator.clipboard?.writeText(`${siteUrl()}/share/${token}`);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
+  };
+
+  const unshare = async (id: string) => {
+    try {
+      await setShareToken(id, null);
+      patchPlan(id, null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't turn off sharing.");
     }
   };
 
@@ -113,7 +147,30 @@ export default function Dashboard({ user }: { user: User }) {
                     <div className="text-xs text-stone-400">{new Date(p.updated_at).toLocaleString()}</div>
                   </div>
                 </button>
-                <div className="flex justify-end border-t border-stone-100 px-3 py-2">
+                <div className="flex items-center justify-between border-t border-stone-100 px-3 py-2">
+                  {p.share_token ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => void copyLink(p.id, p.share_token!)}
+                        className="text-xs font-medium text-brand transition hover:underline"
+                      >
+                        {copiedId === p.id ? "Copied" : "Copy link"}
+                      </button>
+                      <button
+                        onClick={() => void unshare(p.id)}
+                        className="text-xs text-stone-400 transition hover:text-stone-700"
+                      >
+                        Unshare
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => void share(p.id)}
+                      className="text-xs text-stone-400 transition hover:text-brand"
+                    >
+                      {copiedId === p.id ? "Copied" : "Share"}
+                    </button>
+                  )}
                   <button onClick={() => void remove(p.id)} className="text-xs text-stone-400 transition hover:text-red-600">
                     Delete
                   </button>

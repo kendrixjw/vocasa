@@ -11,12 +11,14 @@ export type PlanSummary = {
   name: string;
   thumbnail: string | null;
   updated_at: string;
+  share_token: string | null;
 };
 
 export type PlanRecord = {
   id: string;
   name: string;
   data: PlanData;
+  share_token: string | null;
 };
 
 function requireClient() {
@@ -29,7 +31,7 @@ export async function listPlans(): Promise<PlanSummary[]> {
   const client = requireClient();
   const { data, error } = await client
     .from("plans")
-    .select("id, name, thumbnail, updated_at")
+    .select("id, name, thumbnail, updated_at, share_token")
     .order("updated_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as PlanSummary[];
@@ -37,7 +39,11 @@ export async function listPlans(): Promise<PlanSummary[]> {
 
 export async function getPlan(id: string): Promise<PlanRecord | null> {
   const client = requireClient();
-  const { data, error } = await client.from("plans").select("id, name, data").eq("id", id).single();
+  const { data, error } = await client
+    .from("plans")
+    .select("id, name, data, share_token")
+    .eq("id", id)
+    .single();
   if (error) {
     if (error.code === "PGRST116") return null; // no row
     throw new Error(error.message);
@@ -78,5 +84,12 @@ export async function updatePlan(
 export async function deletePlan(id: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.from("plans").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Enable sharing (set a token) or revoke it (null). Owner-only via RLS. */
+export async function setShareToken(id: string, token: string | null): Promise<void> {
+  const client = requireClient();
+  const { error } = await client.from("plans").update({ share_token: token }).eq("id", id);
   if (error) throw new Error(error.message);
 }

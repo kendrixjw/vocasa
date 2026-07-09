@@ -24,6 +24,8 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_ROUTES.has(pathname)) return true;
   // Public demo canvas (sketch without saving).
   if (pathname === "/editor/local") return true;
+  // Read-only shared plan viewer (access is gated by the token, not a session).
+  if (pathname.startsWith("/share/")) return true;
   // AI proxy routes are used by the public demo; plan APIs (Phase 10) will gate.
   if (pathname.startsWith("/api/")) return true;
   return false;

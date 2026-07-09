@@ -12,7 +12,8 @@ import { runAssist } from "@/lib/ai/assist";
 import { requestPhotoOps, buildPhotoCommand, detectedWidthInches, type PhotoMode } from "@/lib/ai/photoImport";
 import type { Op } from "@/lib/ai/ops";
 import { VoiceRecognizer } from "@/lib/voice/speech";
-import { getPlan, updatePlan } from "@/lib/persistence/plans";
+import { getPlan, updatePlan, setShareToken } from "@/lib/persistence/plans";
+import { siteUrl } from "@/lib/supabase/config";
 import { isPlanData } from "@/lib/persistence/plan";
 import { makeThumbnail } from "@/lib/persistence/thumbnail";
 import { exportPng, exportPdf } from "@/lib/export/exportPlan";
@@ -273,6 +274,44 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  // --- Share link (read-only viewer + comments) ----------------------------
+  const [shareToken, setShareTokenState] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const shareUrl = shareToken ? `${siteUrl()}/share/${shareToken}` : "";
+
+  const createShareLink = useCallback(async () => {
+    if (!planId || shareBusy) return;
+    setShareBusy(true);
+    try {
+      const token = crypto.randomUUID();
+      await setShareToken(planId, token);
+      setShareTokenState(token);
+    } finally {
+      setShareBusy(false);
+    }
+  }, [planId, shareBusy]);
+
+  const revokeShareLink = useCallback(async () => {
+    if (!planId || shareBusy) return;
+    setShareBusy(true);
+    try {
+      await setShareToken(planId, null);
+      setShareTokenState(null);
+      setCopied(false);
+    } finally {
+      setShareBusy(false);
+    }
+  }, [planId, shareBusy]);
+
+  const copyShareUrl = useCallback(() => {
+    if (!shareUrl) return;
+    void navigator.clipboard?.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [shareUrl]);
+
   const doExport = useCallback(
     async (fmt: "png" | "pdf") => {
       setExportOpen(false);
@@ -301,6 +340,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
         if (cancelled) return;
         if (rec) {
           setPlanName(rec.name);
+          setShareTokenState(rec.share_token);
           if (isPlanData(rec.data)) editor.load(rec.data);
         }
       } finally {
@@ -894,6 +934,81 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
         <ChromeButton onClick={() => editor.fit()} title="Fit to extents (F)">
           Fit
         </ChromeButton>
+        {persisting && (
+          <div className="relative">
+            <button
+              onClick={() => setShareOpen((o) => !o)}
+              title="Create a read-only link to share this plan"
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium shadow ring-1 transition ${
+                shareToken
+                  ? "bg-white text-brand ring-brand/40 hover:bg-brand/5"
+                  : "bg-white text-neutral-700 ring-neutral-200 hover:bg-white"
+              }`}
+            >
+              <LinkIcon />
+              {shareToken ? "Shared" : "Share link"}
+            </button>
+            {shareOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShareOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 w-72 rounded-lg bg-white p-3 shadow-lg ring-1 ring-neutral-200">
+                  {shareToken ? (
+                    <>
+                      <p className="mb-2 text-xs text-neutral-500">
+                        Anyone with this link can view (read-only) and comment.
+                      </p>
+                      <div className="mb-2 flex items-center gap-1.5">
+                        <input
+                          readOnly
+                          value={shareUrl}
+                          onFocus={(e) => e.target.select()}
+                          className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-neutral-700 outline-none"
+                        />
+                        <button
+                          onClick={copyShareUrl}
+                          className="shrink-0 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-hover"
+                        >
+                          {copied ? "Copied" : "Copy"}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <a
+                          href={shareUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-medium text-brand hover:underline"
+                        >
+                          Open link →
+                        </a>
+                        <button
+                          onClick={() => void revokeShareLink()}
+                          disabled={shareBusy}
+                          className="text-xs font-medium text-neutral-500 transition hover:text-red-600 disabled:opacity-50"
+                        >
+                          Turn off sharing
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mb-2 text-xs text-neutral-500">
+                        Create a link so anyone can view this plan (read-only) and leave comments. No account
+                        needed to view.
+                      </p>
+                      <button
+                        onClick={() => void createShareLink()}
+                        disabled={shareBusy}
+                        className="w-full rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-hover disabled:opacity-50"
+                      >
+                        {shareBusy ? "Creating…" : "Create share link"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <div className="relative">
           <button
             onClick={() => setExportOpen((o) => !o)}
@@ -1223,6 +1338,15 @@ function ShareIcon() {
       <circle cx="18" cy="19" r="3" />
       <line x1="8.6" y1="10.6" x2="15.4" y2="6.4" />
       <line x1="8.6" y1="13.4" x2="15.4" y2="17.6" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   );
 }
