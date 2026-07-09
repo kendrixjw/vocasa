@@ -9,6 +9,8 @@ import { FURNITURE, furnitureDef, type IconDraw } from "@/lib/furniture/library"
 import type { PointerInfo } from "@/lib/tools/tool";
 import { runCommand, type CommandOutcome } from "@/lib/ai/client";
 import { runAssist } from "@/lib/ai/assist";
+import { requestPhotoOps, buildPhotoCommand, detectedWidthInches } from "@/lib/ai/photoImport";
+import type { Op } from "@/lib/ai/ops";
 import { VoiceRecognizer } from "@/lib/voice/speech";
 import { getPlan, updatePlan } from "@/lib/persistence/plans";
 import { isPlanData } from "@/lib/persistence/plan";
@@ -141,6 +143,69 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   const dismissAssist = useCallback(() => {
     if (editor.hasPreview) editor.rejectPreview();
     setAssist(null);
+  }, [editor]);
+
+  // Photo import (Phase 16): photo -> vision model -> ops -> scaled preview.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoOps, setPhotoOps] = useState<Op[] | null>(null);
+  const [photoWidthFt, setPhotoWidthFt] = useState(20);
+  const [photoMsg, setPhotoMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const previewPhotoAt = useCallback(
+    (ops: Op[], widthFt: number) => {
+      const cmd = buildPhotoCommand(editor, ops, Math.max(1, widthFt) * 12);
+      if (cmd) editor.previewCommand(cmd.command);
+    },
+    [editor],
+  );
+
+  const onPhotoFile = useCallback(
+    async (file: File) => {
+      if (photoBusy) return;
+      if (editor.hasPreview) editor.rejectPreview();
+      setPhotoOps(null);
+      setPhotoMsg(null);
+      setPhotoBusy(true);
+      try {
+        const r = await requestPhotoOps(file);
+        if (r.kind === "error") {
+          setPhotoMsg({ text: r.message, error: true });
+        } else if (r.kind === "empty") {
+          setPhotoMsg({ text: "I couldn't find a floorplan in that image. Try a clear, top-down shot.", error: true });
+        } else {
+          const wft = Math.max(4, Math.round(detectedWidthInches(r.ops) / 12));
+          setPhotoOps(r.ops);
+          setPhotoWidthFt(wft);
+          previewPhotoAt(r.ops, wft);
+        }
+      } catch {
+        setPhotoMsg({ text: "Something went wrong importing that image.", error: true });
+      } finally {
+        setPhotoBusy(false);
+      }
+    },
+    [editor, photoBusy, previewPhotoAt],
+  );
+
+  const changePhotoWidth = useCallback(
+    (ft: number) => {
+      setPhotoWidthFt(ft);
+      if (photoOps) previewPhotoAt(photoOps, ft);
+    },
+    [photoOps, previewPhotoAt],
+  );
+
+  const applyPhoto = useCallback(() => {
+    editor.acceptPreview();
+    setPhotoOps(null);
+    setPhotoMsg(null);
+  }, [editor]);
+
+  const discardPhoto = useCallback(() => {
+    if (editor.hasPreview) editor.rejectPreview();
+    setPhotoOps(null);
+    setPhotoMsg(null);
   }, [editor]);
 
   // --- Persistence (Phase 9): load + debounced autosave to Supabase ---------
@@ -500,8 +565,28 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
           </div>
         )}
 
-        {/* Design assist trigger */}
-        <div className="flex justify-end">
+        {/* Design assist + photo import triggers */}
+        <div className="flex justify-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void onPhotoFile(f);
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={photoBusy}
+            title="Import a floorplan or sketch photo"
+            className="flex items-center gap-1.5 rounded-lg bg-white/90 px-2.5 py-1 text-xs font-medium text-brand shadow ring-1 ring-stone-200 transition hover:bg-white disabled:opacity-50"
+          >
+            <PhotoIcon />
+            {photoBusy ? "Reading…" : "Import photo"}
+          </button>
           <button
             onClick={() => void runAssistNow()}
             disabled={assistBusy}
@@ -512,6 +597,52 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             {assistBusy ? "Thinking…" : "Design assist"}
           </button>
         </div>
+
+        {/* Photo import: error or scale-and-confirm panel */}
+        {photoMsg && (
+          <div
+            className={`rounded-lg px-3 py-1.5 text-xs shadow ring-1 ${
+              photoMsg.error ? "bg-red-50 text-red-700 ring-red-200" : "bg-white/95 text-neutral-700 ring-neutral-200"
+            }`}
+          >
+            {photoMsg.text}
+          </div>
+        )}
+        {photoOps && (
+          <div className="rounded-xl bg-white/97 px-3 py-2.5 text-sm text-neutral-700 shadow-lg ring-1 ring-stone-200">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand">
+              <PhotoIcon /> Imported floorplan
+            </div>
+            <p className="mb-2 leading-snug">
+              A photo has no scale. About how wide is the whole plan? I&apos;ll resize the preview to match.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={4}
+                max={200}
+                value={photoWidthFt}
+                onChange={(e) => changePhotoWidth(Number(e.target.value) || 0)}
+                className="w-20 rounded-lg border border-stone-200 px-2 py-1 text-sm outline-none focus:border-brand"
+              />
+              <span className="text-xs text-neutral-500">feet wide</span>
+            </div>
+            <div className="mt-2.5 flex justify-end gap-2">
+              <button
+                onClick={discardPhoto}
+                className="rounded-lg px-3 py-1 text-xs font-medium text-neutral-600 ring-1 ring-neutral-200 transition hover:bg-neutral-50"
+              >
+                Discard
+              </button>
+              <button
+                onClick={applyPhoto}
+                className="rounded-lg bg-brand px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-hover"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Assist result / preview panel */}
         {assist && (
@@ -949,6 +1080,16 @@ function ShareIcon() {
       <circle cx="18" cy="19" r="3" />
       <line x1="8.6" y1="10.6" x2="15.4" y2="6.4" />
       <line x1="8.6" y1="13.4" x2="15.4" y2="17.6" />
+    </svg>
+  );
+}
+
+function PhotoIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="M21 16l-5-5L5 20" />
     </svg>
   );
 }
