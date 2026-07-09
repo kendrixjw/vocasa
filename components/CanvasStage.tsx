@@ -9,7 +9,7 @@ import { FURNITURE, furnitureDef, type IconDraw } from "@/lib/furniture/library"
 import type { PointerInfo } from "@/lib/tools/tool";
 import { runCommand, type CommandOutcome } from "@/lib/ai/client";
 import { runAssist } from "@/lib/ai/assist";
-import { requestPhotoOps, buildPhotoCommand, detectedWidthInches } from "@/lib/ai/photoImport";
+import { requestPhotoOps, buildPhotoCommand, detectedWidthInches, type PhotoMode } from "@/lib/ai/photoImport";
 import type { Op } from "@/lib/ai/ops";
 import { VoiceRecognizer } from "@/lib/voice/speech";
 import { getPlan, updatePlan } from "@/lib/persistence/plans";
@@ -145,12 +145,15 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
     setAssist(null);
   }, [editor]);
 
-  // Photo import (Phase 16): photo -> vision model -> ops -> scaled preview.
+  // Photo import: floorplan/sketch (Phase 16) or real-room photo (Phase 17).
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoOps, setPhotoOps] = useState<Op[] | null>(null);
   const [photoWidthFt, setPhotoWidthFt] = useState(20);
   const [photoMsg, setPhotoMsg] = useState<{ text: string; error?: boolean } | null>(null);
+  const [photoMode, setPhotoMode] = useState<PhotoMode>("floorplan");
+  // A picked file awaiting the user's choice of what kind of image it is.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const previewPhotoAt = useCallback(
     (ops: Op[], widthFt: number) => {
@@ -161,18 +164,25 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   );
 
   const onPhotoFile = useCallback(
-    async (file: File) => {
+    async (file: File, mode: PhotoMode) => {
       if (photoBusy) return;
       if (editor.hasPreview) editor.rejectPreview();
       setPhotoOps(null);
       setPhotoMsg(null);
+      setPhotoMode(mode);
       setPhotoBusy(true);
       try {
-        const r = await requestPhotoOps(file);
+        const r = await requestPhotoOps(file, mode);
         if (r.kind === "error") {
           setPhotoMsg({ text: r.message, error: true });
         } else if (r.kind === "empty") {
-          setPhotoMsg({ text: "I couldn't find a floorplan in that image. Try a clear, top-down shot.", error: true });
+          setPhotoMsg({
+            text:
+              mode === "room"
+                ? "I couldn't read a room in that photo. Try a shot that shows the floor and the walls."
+                : "I couldn't find a floorplan in that image. Try a clear, top-down shot.",
+            error: true,
+          });
         } else {
           const wft = Math.max(4, Math.round(detectedWidthInches(r.ops) / 12));
           setPhotoOps(r.ops);
@@ -187,6 +197,18 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
     },
     [editor, photoBusy, previewPhotoAt],
   );
+
+  // The user picked a file; ask what kind it is, then import with that mode.
+  const chooseKind = useCallback(
+    (mode: PhotoMode) => {
+      const file = pendingFile;
+      setPendingFile(null);
+      if (file) void onPhotoFile(file, mode);
+    },
+    [pendingFile, onPhotoFile],
+  );
+
+  const cancelPending = useCallback(() => setPendingFile(null), []);
 
   const changePhotoWidth = useCallback(
     (ft: number) => {
@@ -575,13 +597,13 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             onChange={(e) => {
               const f = e.target.files?.[0];
               e.target.value = "";
-              if (f) void onPhotoFile(f);
+              if (f) setPendingFile(f);
             }}
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={photoBusy}
-            title="Import a floorplan or sketch photo"
+            disabled={photoBusy || !!pendingFile}
+            title="Import a floor plan, sketch, or room photo"
             className="flex items-center gap-1.5 rounded-lg bg-white/90 px-2.5 py-1 text-xs font-medium text-brand shadow ring-1 ring-stone-200 transition hover:bg-white disabled:opacity-50"
           >
             <PhotoIcon />
@@ -598,6 +620,39 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
           </button>
         </div>
 
+        {/* Photo import: ask what kind of image was picked */}
+        {pendingFile && (
+          <div className="rounded-xl bg-white/97 px-3 py-2.5 text-sm text-neutral-700 shadow-lg ring-1 ring-stone-200">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-brand">
+              What did you upload?
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <button
+                onClick={() => chooseKind("floorplan")}
+                className="rounded-lg px-3 py-1.5 text-left text-xs font-medium text-brand ring-1 ring-stone-200 transition hover:bg-stone-50"
+              >
+                A floor plan or sketch
+                <span className="block font-normal text-neutral-500">Top-down drawing I&apos;ll trace exactly.</span>
+              </button>
+              <button
+                onClick={() => chooseKind("room")}
+                className="rounded-lg px-3 py-1.5 text-left text-xs font-medium text-brand ring-1 ring-stone-200 transition hover:bg-stone-50"
+              >
+                A photo of a real room
+                <span className="block font-normal text-neutral-500">
+                  I&apos;ll estimate the layout &mdash; verify the size afterward.
+                </span>
+              </button>
+              <button
+                onClick={cancelPending}
+                className="self-end px-2 py-0.5 text-xs font-medium text-neutral-500 transition hover:text-neutral-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Photo import: error or scale-and-confirm panel */}
         {photoMsg && (
           <div
@@ -611,10 +666,18 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
         {photoOps && (
           <div className="rounded-xl bg-white/97 px-3 py-2.5 text-sm text-neutral-700 shadow-lg ring-1 ring-stone-200">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand">
-              <PhotoIcon /> Imported floorplan
+              <PhotoIcon /> {photoMode === "room" ? "Estimated room" : "Imported floorplan"}
             </div>
+            {photoMode === "room" && (
+              <p className="mb-2 rounded-lg bg-amber-50 px-2 py-1 text-xs leading-snug text-amber-800 ring-1 ring-amber-200">
+                This is an estimate from a single photo, not a measurement. Set a known dimension below and verify it
+                against the real room.
+              </p>
+            )}
             <p className="mb-2 leading-snug">
-              A photo has no scale. About how wide is the whole plan? I&apos;ll resize the preview to match.
+              {photoMode === "room"
+                ? "About how wide is this room? Measure one wall if you can — I'll scale the estimate to match."
+                : "A photo has no scale. About how wide is the whole plan? I'll resize the preview to match."}
             </p>
             <div className="flex items-center gap-2">
               <input

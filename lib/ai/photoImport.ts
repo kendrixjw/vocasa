@@ -23,7 +23,9 @@ export async function fileToBase64(file: File): Promise<{ data: string; mediaTyp
   return { data: btoa(binary), mediaType: file.type || "image/png" };
 }
 
-export async function requestPhotoOps(file: File): Promise<PhotoOpsResult> {
+export type PhotoMode = "floorplan" | "room";
+
+export async function requestPhotoOps(file: File, mode: PhotoMode = "floorplan"): Promise<PhotoOpsResult> {
   let payload: { data: string; mediaType: string };
   try {
     payload = await fileToBase64(file);
@@ -36,7 +38,7 @@ export async function requestPhotoOps(file: File): Promise<PhotoOpsResult> {
     res = await fetch("/api/photo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: payload.data, mediaType: payload.mediaType }),
+      body: JSON.stringify({ image: payload.data, mediaType: payload.mediaType, mode }),
     });
   } catch {
     return { kind: "error", message: "Couldn't reach the server." };

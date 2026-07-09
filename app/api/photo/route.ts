@@ -5,10 +5,11 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { buildPhotoSystemPrompt } from "@/lib/ai/photoPrompt";
+import { buildRoomPhotoSystemPrompt } from "@/lib/ai/roomPhotoPrompt";
 
 export const runtime = "nodejs";
 
-type Body = { image?: unknown; mediaType?: unknown };
+type Body = { image?: unknown; mediaType?: unknown; mode?: unknown };
 
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
@@ -36,6 +37,14 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "That image is too large. Try one under 5 MB." }, { status: 413 });
   }
 
+  // "room" = perspective photo of a real room (Phase 17, estimate);
+  // "floorplan" (default) = top-down plan/sketch (Phase 16).
+  const isRoom = body.mode === "room";
+  const system = isRoom ? buildRoomPhotoSystemPrompt() : buildPhotoSystemPrompt();
+  const userText = isRoom
+    ? "Estimate this room as a JSON array of operations."
+    : "Reconstruct this floorplan as a JSON array of operations.";
+
   const client = new Anthropic({ apiKey: key });
 
   try {
@@ -43,7 +52,7 @@ export async function POST(req: Request): Promise<Response> {
       model: "claude-opus-4-8",
       max_tokens: 4096,
       thinking: { type: "adaptive" },
-      system: buildPhotoSystemPrompt(),
+      system,
       messages: [
         {
           role: "user",
@@ -52,7 +61,7 @@ export async function POST(req: Request): Promise<Response> {
               type: "image",
               source: { type: "base64", media_type: mediaType as "image/png", data: image },
             },
-            { type: "text", text: "Reconstruct this floorplan as a JSON array of operations." },
+            { type: "text", text: userText },
           ],
         },
       ],
