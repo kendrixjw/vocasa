@@ -4,6 +4,7 @@
 "use client";
 
 import type { Editor } from "../editor.ts";
+import { buildDxf } from "./dxf.ts";
 
 const TARGET_LONG_EDGE = 2000; // px on the longer side
 const ASPECT_MIN = 0.6;
@@ -50,6 +51,17 @@ export function exportPng(editor: Editor, name: string): boolean {
   const canvas = renderToCanvas(editor);
   if (!canvas) return false;
   downloadDataUrl(canvas.toDataURL("image/png"), safeName(name, "png"));
+  return true;
+}
+
+/** Export the active floor as an R12 DXF (real CAD geometry, to scale). */
+export function exportDxf(editor: Editor, name: string): boolean {
+  if (typeof document === "undefined") return false;
+  const dxf = buildDxf(editor.doc);
+  const blob = new Blob([dxf], { type: "application/dxf" });
+  const url = URL.createObjectURL(blob);
+  downloadDataUrl(url, safeName(name, "dxf"));
+  URL.revokeObjectURL(url);
   return true;
 }
 

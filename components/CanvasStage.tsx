@@ -16,7 +16,7 @@ import { getPlan, updatePlan, setShareToken } from "@/lib/persistence/plans";
 import { siteUrl } from "@/lib/supabase/config";
 import { isPlanData } from "@/lib/persistence/plan";
 import { makeThumbnail } from "@/lib/persistence/thumbnail";
-import { exportPng, exportPdf } from "@/lib/export/exportPlan";
+import { exportPng, exportPdf, exportDxf } from "@/lib/export/exportPlan";
 import RedesignBridge from "@/components/RedesignBridge";
 import { rooms, walls } from "@/lib/model/document";
 
@@ -313,11 +313,12 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   }, [shareUrl]);
 
   const doExport = useCallback(
-    async (fmt: "png" | "pdf") => {
+    async (fmt: "png" | "pdf" | "dxf") => {
       setExportOpen(false);
       setExporting(true);
       try {
         if (fmt === "png") exportPng(editor, nameRef.current);
+        else if (fmt === "dxf") exportDxf(editor, nameRef.current);
         else await exportPdf(editor, nameRef.current);
       } finally {
         setExporting(false);
@@ -1034,6 +1035,12 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
                   className="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100"
                 >
                   Download PDF
+                </button>
+                <button
+                  onClick={() => void doExport("dxf")}
+                  className="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100"
+                >
+                  Download DXF (CAD)
                 </button>
               </div>
             </>
