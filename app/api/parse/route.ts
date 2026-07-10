@@ -36,7 +36,9 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const message = await client.messages.create({
       model: "claude-opus-4-8",
-      max_tokens: 2048,
+      // A single instruction can expand into many ops; keep enough room that a
+      // long op array isn't cut off mid-JSON (which would fail to parse).
+      max_tokens: 4096,
       system: buildSystemPrompt(),
       messages: [{ role: "user", content: buildUserPrompt(body.snapshot ?? {}, transcript) }],
     });
@@ -49,6 +51,9 @@ export async function POST(req: Request): Promise<Response> {
 
     const parsed = extractJsonArray(text);
     if (parsed === null) {
+      if (message.stop_reason === "max_tokens") {
+        return Response.json({ clarify: "That's a lot at once — try breaking it into smaller steps." });
+      }
       return Response.json({ clarify: "Sorry, I didn't catch that. Try rephrasing?" });
     }
     return Response.json({ ops: parsed });

@@ -47,7 +47,10 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const message = await client.messages.create({
       model: "claude-opus-4-8",
-      max_tokens: 4096,
+      // Adaptive thinking spends part of this budget before the JSON is written,
+      // and a full scheme (palette + materials + items) is sizable — keep ample
+      // room so it isn't truncated mid-object (which would fail to parse).
+      max_tokens: 8192,
       thinking: { type: "adaptive" },
       system: buildDecorSystemPrompt(),
       messages: [{ role: "user", content }],
@@ -61,7 +64,11 @@ export async function POST(req: Request): Promise<Response> {
 
     const obj = extractJsonObject(text);
     if (!obj) {
-      return Response.json({ error: "I couldn't put together a scheme just now - try again." }, { status: 502 });
+      const error =
+        message.stop_reason === "max_tokens"
+          ? "That scheme got too long to finish - try a more focused style hint."
+          : "I couldn't put together a scheme just now - try again.";
+      return Response.json({ error }, { status: 502 });
     }
     return Response.json({ decor: obj });
   } catch (err) {

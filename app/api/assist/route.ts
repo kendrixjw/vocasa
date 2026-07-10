@@ -29,7 +29,10 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const message = await client.messages.create({
       model: "claude-opus-4-8",
-      max_tokens: 4096,
+      // Adaptive thinking spends part of this budget before the JSON is written,
+      // and a response can carry both notes and a proposed op batch — keep ample
+      // room so it isn't truncated mid-object (which would fail to parse).
+      max_tokens: 8192,
       thinking: { type: "adaptive" },
       system: buildAssistSystemPrompt(),
       messages: [{ role: "user", content: buildAssistUserPrompt(body.snapshot ?? {}, request) }],
@@ -43,7 +46,11 @@ export async function POST(req: Request): Promise<Response> {
 
     const obj = extractJsonObject(text);
     if (!obj || typeof obj.notes !== "string") {
-      return Response.json({ notes: "I couldn't analyze the layout just now — try again in a moment." });
+      const notes =
+        message.stop_reason === "max_tokens"
+          ? "That was a lot to analyze at once — try asking about one area at a time."
+          : "I couldn't analyze the layout just now — try again in a moment.";
+      return Response.json({ notes });
     }
     return Response.json({ notes: obj.notes, ops: Array.isArray(obj.ops) ? obj.ops : [] });
   } catch (err) {
