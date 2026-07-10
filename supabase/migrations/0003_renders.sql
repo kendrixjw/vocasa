@@ -1,4 +1,4 @@
--- 0002_renders.sql
+-- 0003_renders.sql
 -- Vocasa: premium redesign renders (paid, metered image-to-image add-on).
 --
 -- The core app produces cheap, editable, to-scale geometry from text AI calls.

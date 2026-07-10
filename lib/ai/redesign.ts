@@ -6,7 +6,7 @@ import { fileToBase64 } from "./photoImport.ts";
 import type { RedesignModule } from "./redesignPrompt.ts";
 import { getSupabaseBrowserClient } from "../supabase/client.ts";
 
-// Must match render_free_limit() in supabase/migrations/0002_renders.sql.
+// Must match render_free_limit() in supabase/migrations/0003_renders.sql.
 export const FREE_PER_MODULE = 2;
 
 export type RenderQuota = { freeRemaining: number; credits: number };

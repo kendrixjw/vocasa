@@ -52,9 +52,10 @@ report a clear error but hand editing still works.
 1. Create a Supabase project.
 2. Run the migrations in [`supabase/migrations/`](supabase/migrations/) in order:
    `0001_plans.sql` (the `plans` table, owner-only RLS, `updated_at` trigger,
-   owner index), then `0002_renders.sql` and `0003_billing.sql` if you're
-   enabling premium renders (render credits/history + tamper-proof credit
-   accounting, and Stripe billing tables).
+   owner index), `0002_sharing.sql` (the `share_token` column + comments +
+   token-scoped RPCs for read-only sharing), then `0003_renders.sql` and
+   `0004_billing.sql` if you're enabling premium renders (render credits/history
+   + tamper-proof credit accounting, and Stripe billing tables).
 3. Add your dev/prod origin to the Auth redirect URLs (e.g. `http://localhost:3000`).
 4. Sign in is passwordless **magic link** (email OTP).
 

@@ -1,7 +1,7 @@
--- 0003_billing.sql
+-- 0004_billing.sql
 -- Vocasa: Stripe billing for render credits.
 --
--- Credits are the common currency for paid renders (see 0002). They arrive two
+-- Credits are the common currency for paid renders (see 0003). They arrive two
 -- ways, both fulfilled by the Stripe webhook running under the service role:
 --   * Credit packs  - one-time purchase, grants a fixed number of credits.
 --   * Monthly tiers  - subscription; each paid invoice grants that tier's
