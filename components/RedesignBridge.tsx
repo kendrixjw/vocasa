@@ -12,6 +12,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "@/lib/supabase/useSession";
 import { requestRedesign, fetchRenderQuota, type RenderQuota } from "@/lib/ai/redesign";
 import type { RedesignModule } from "@/lib/ai/redesignPrompt";
+import { startCheckout } from "@/lib/billing/checkout";
+import type { ProductKey } from "@/lib/billing/catalog";
+
+const BUY_OPTIONS: { key: ProductKey; label: string }[] = [
+  { key: "pack_30", label: "30 credits" },
+  { key: "pack_100", label: "100 credits" },
+  { key: "tier_standard", label: "40/mo plan" },
+  { key: "tier_pro", label: "100/mo plan" },
+];
 
 const MODULES: { key: RedesignModule; title: string; blurb: string; accept: string }[] = [
   {
@@ -40,6 +49,17 @@ export default function RedesignBridge({ hasPlan }: { hasPlan: boolean }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ url: string; source: "free" | "credit" } | null>(null);
   const [error, setError] = useState<{ message: string; outOfCredits: boolean } | null>(null);
+  const [buying, setBuying] = useState(false);
+
+  const buy = useCallback(async (product: ProductKey) => {
+    setBuying(true);
+    try {
+      await startCheckout(product);
+    } catch (e) {
+      setError({ message: e instanceof Error ? e.message : "Couldn't start checkout.", outOfCredits: false });
+      setBuying(false);
+    }
+  }, []);
 
   // Release the object URL when it changes or the panel unmounts.
   useEffect(() => {
@@ -230,8 +250,26 @@ export default function RedesignBridge({ hasPlan }: { hasPlan: boolean }) {
               {error && (
                 <div className="rounded-lg bg-red-50 px-2 py-1.5 text-xs leading-snug text-red-700 ring-1 ring-red-200">
                   {error.outOfCredits
-                    ? "You're out of free renders and credits for this module. Credit packs are coming soon."
+                    ? "You're out of free renders and credits for this module."
                     : error.message}
+                </div>
+              )}
+
+              {user && (error?.outOfCredits || (quota && quota.freeRemaining === 0 && quota.credits === 0)) && (
+                <div className="rounded-lg bg-fuchsia-50 px-2 py-1.5 ring-1 ring-fuchsia-100">
+                  <div className="mb-1 text-xs font-medium text-fuchsia-800">Buy render credits</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {BUY_OPTIONS.map((o) => (
+                      <button
+                        key={o.key}
+                        onClick={() => buy(o.key)}
+                        disabled={buying}
+                        className="rounded-lg bg-white px-2 py-1 text-xs font-medium text-fuchsia-700 ring-1 ring-fuchsia-200 transition hover:bg-fuchsia-100 disabled:opacity-50"
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
