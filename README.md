@@ -40,6 +40,7 @@ Open http://localhost:3000.
 | `NEXT_PUBLIC_SUPABASE_URL` | Save/load, dashboard | Public; RLS enforces access |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Save/load, dashboard | Public; anon key is safe to ship |
 | `VERCEL_OIDC_TOKEN` / `AI_GATEWAY_API_KEY` | Premium redesign renders | AI Gateway auth; OIDC token comes from `vercel env pull` |
+| `BLOB_READ_WRITE_TOKEN` | Storing redesign renders | Private Vercel Blob; if unset, renders fall back to inline data URLs |
 | `SUPABASE_SERVICE_ROLE_KEY` | Redesign billing webhook | **Server-side only** — lets the Stripe webhook credit any account; bypasses RLS |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Buying render credits | Server-side; Price IDs for the packs/tiers (see `.env.local.example`) |
 
@@ -78,6 +79,9 @@ report a clear error but hand editing still works.
 - **By hand:** draw walls, drag/rotate/resize furniture, place doors/windows. Rooms
   auto-detect from enclosed walls with live square footage. Everything undoes
   (Ctrl/Cmd+Z).
+- **Select a furniture item** for a floating toolbar — **Move** (drag the handle,
+  or nudge with arrow keys; Shift = 10″ steps), **Mirror** (flip horizontally),
+  **Edit** (width/depth/rotation), **Delete** (or the Del key).
 - **Save** is automatic (~2s debounce) plus Ctrl/Cmd+S; your plans show as
   thumbnails on the dashboard.
 - **Share** exports a clean PNG or PDF.
@@ -112,6 +116,7 @@ app/
   api/parse, api/assist  server-side Anthropic proxies
   api/decor              decor-scheme proxy (plan + style [+ photo] -> palette/materials/items)
   api/redesign           premium image-to-image renders via AI Gateway (authed, metered)
+  api/renders/[id]       authed proxy that streams a render from private Blob (owner-only)
   api/billing/*          Stripe checkout / webhook / portal for render credits
 lib/
   billing/               Stripe client, product catalog, checkout helper
