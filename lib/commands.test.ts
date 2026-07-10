@@ -2,8 +2,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDocument } from "./model/types.ts";
 import { createWall } from "./model/wall.ts";
-import { AddEntities, DeleteEntities, TranslateEntities } from "./commands.ts";
+import { createFurniture } from "./model/furniture.ts";
+import { AddEntities, DeleteEntities, MirrorFurniture, TranslateEntities } from "./commands.ts";
 import { History } from "./history.ts";
+
+test("MirrorFurniture toggles flipX and undo restores it", () => {
+  const doc = createDocument();
+  const f = createFurniture("sofa", { x: 0, y: 0 });
+  doc.entities.push(f);
+  assert.equal(f.flipX ?? false, false);
+  const cmd = new MirrorFurniture(f.id);
+  cmd.do(doc);
+  assert.equal(f.flipX, true);
+  cmd.undo(doc);
+  assert.equal(f.flipX, false);
+});
 
 test("AddEntities do/undo adds then removes", () => {
   const doc = createDocument();

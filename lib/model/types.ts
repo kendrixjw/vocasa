@@ -34,6 +34,7 @@ export type Furniture = EntityBase & {
   rotation: number; // radians, CCW
   w: number; // inches
   h: number; // inches
+  flipX?: boolean; // mirrored horizontally in its own frame (footprint is symmetric)
 };
 
 export type DoorSwing = "in" | "out" | "left" | "right";

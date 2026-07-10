@@ -124,6 +124,25 @@ export class SetFurnitureTransform implements Command {
   }
 }
 
+/** Toggle a furniture block's horizontal mirror. Self-inverse: undo re-toggles. */
+export class MirrorFurniture implements Command {
+  readonly label = "Mirror furniture";
+  private readonly id: string;
+  constructor(id: string) {
+    this.id = id;
+  }
+  private toggle(doc: Document): void {
+    const e = doc.entities.find((x) => x.id === this.id);
+    if (e && e.type === "furniture") e.flipX = !e.flipX;
+  }
+  do(doc: Document): void {
+    this.toggle(doc);
+  }
+  undo(doc: Document): void {
+    this.toggle(doc);
+  }
+}
+
 /** Edit a door/window's offset, width, and/or swing (undoable). */
 export type OpeningPatch = { offset?: number; width?: number; swing?: DoorSwing };
 

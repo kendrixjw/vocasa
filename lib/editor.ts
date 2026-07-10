@@ -25,7 +25,7 @@ import { createAnnotation, drawAnnotation, hitTestAnnotation } from "./model/ann
 import { syncRooms } from "./rooms/sync.ts";
 import { History } from "./history.ts";
 import type { Command } from "./history.ts";
-import { AddEntities, DeleteEntities, EditAnnotation, EditOpening, RenameRoom, SetFurnitureTransform } from "./commands.ts";
+import { AddEntities, DeleteEntities, EditAnnotation, EditOpening, MirrorFurniture, RenameRoom, SetFurnitureTransform } from "./commands.ts";
 import type { OpeningPatch } from "./commands.ts";
 import type { PointerInfo, Tool } from "./tools/tool.ts";
 import { PLAN_VERSION, type FloorData, type PlanData } from "./persistence/plan.ts";
@@ -495,6 +495,24 @@ export class Editor {
     this.execute(new SetFurnitureTransform(id, after, before));
   }
 
+  /** Mirror the selected furniture horizontally (undoable). */
+  mirrorSelectedFurniture(): void {
+    const f = this.selectedFurniture;
+    if (!f) return;
+    this.execute(new MirrorFurniture(f.id));
+  }
+
+  /** Move a furniture block to an absolute new center (undoable). Used by the
+   *  toolbar Move handle and arrow-key nudging. */
+  moveFurniture(id: string, position: Point): void {
+    const e = this.doc.entities.find((x) => x.id === id);
+    if (!e || e.type !== "furniture") return;
+    if (e.position.x === position.x && e.position.y === position.y) return;
+    const before = { position: { ...e.position }, rotation: e.rotation, w: e.w, h: e.h };
+    const after = { position: { ...position }, rotation: e.rotation, w: e.w, h: e.h };
+    this.execute(new SetFurnitureTransform(id, after, before));
+  }
+
   private pruneSelection(): void {
     const alive = new Set(this.doc.entities.map((e) => e.id));
     for (const id of [...this.selection]) if (!alive.has(id)) this.selection.delete(id);
@@ -599,6 +617,19 @@ export class Editor {
     if (!mod && (e.key === "t" || e.key === "T")) {
       this.setTool("annotation");
       return true;
+    }
+    // Arrow keys nudge the selected furniture (1", or 10" with Shift).
+    if (e.key.startsWith("Arrow")) {
+      const f = this.selectedFurniture;
+      if (f) {
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
+        const dy = e.key === "ArrowUp" ? step : e.key === "ArrowDown" ? -step : 0;
+        if (dx || dy) {
+          this.moveFurniture(f.id, { x: f.position.x + dx, y: f.position.y + dy });
+          return true;
+        }
+      }
     }
     this.tool.onKeyDown?.(e.key, this);
     return false;

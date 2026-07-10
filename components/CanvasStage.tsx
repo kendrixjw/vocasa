@@ -20,6 +20,7 @@ import { exportPng, exportPdf, exportDxf } from "@/lib/export/exportPlan";
 import RedesignBridge from "@/components/RedesignBridge";
 import DecorPanel from "@/components/DecorPanel";
 import { rooms, walls } from "@/lib/model/document";
+import { corners } from "@/lib/model/furniture";
 
 type PersistenceProps = {
   /** When set (and enabled), the plan loads from / autosaves to this row. */
@@ -274,6 +275,60 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   // --- Export (Phase 10): clean PNG / PDF to share --------------------------
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // --- Selection toolbar (Move / Mirror / Edit / Delete on a furniture) -----
+  const [editingSel, setEditingSel] = useState(false);
+  const selFurniture = editor.selectedFurniture;
+  // Reset the inline edit panel whenever the selected item changes.
+  useEffect(() => {
+    setEditingSel(false);
+  }, [selFurniture?.id]);
+
+  const moveDrag = useRef<{ id: string; startScreen: Point; startPos: Point } | null>(null);
+  const canvasScreen = useCallback((e: React.PointerEvent): Point => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }, []);
+  const onMoveHandleDown = useCallback(
+    (e: React.PointerEvent) => {
+      const f = editor.selectedFurniture;
+      if (!f) return;
+      e.preventDefault();
+      moveDrag.current = { id: f.id, startScreen: canvasScreen(e), startPos: { ...f.position } };
+      (e.target as Element).setPointerCapture(e.pointerId);
+    },
+    [editor, canvasScreen],
+  );
+  const onMoveHandleMove = useCallback(
+    (e: React.PointerEvent) => {
+      const md = moveDrag.current;
+      if (!md) return;
+      const w0 = editor.toWorld(md.startScreen);
+      const w1 = editor.toWorld(canvasScreen(e));
+      const ent = editor.doc.entities.find((x) => x.id === md.id);
+      if (ent && ent.type === "furniture") {
+        ent.position = { x: md.startPos.x + (w1.x - w0.x), y: md.startPos.y + (w1.y - w0.y) };
+        editor.onDirty?.();
+        forceHud();
+      }
+    },
+    [editor, canvasScreen],
+  );
+  const onMoveHandleUp = useCallback(
+    (e: React.PointerEvent) => {
+      const md = moveDrag.current;
+      if (!md) return;
+      moveDrag.current = null;
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
+      const ent = editor.doc.entities.find((x) => x.id === md.id);
+      if (ent && ent.type === "furniture") {
+        const final = { ...ent.position };
+        ent.position = { ...md.startPos }; // restore so the command captures a clean before/after
+        editor.moveFurniture(md.id, final);
+      }
+    },
+    [editor],
+  );
 
   // --- Share link (read-only viewer + comments) ----------------------------
   const [shareToken, setShareTokenState] = useState<string | null>(null);
@@ -581,6 +636,51 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
           style={{ left: textEdit.left, top: textEdit.top, minWidth: 120 }}
         />
       )}
+
+      {/* Floating action toolbar for a selected furniture item */}
+      {selFurniture && (() => {
+        const cs = corners(selFurniture).map((w) => editor.toScreen(w));
+        const midX = (cs[0].x + cs[1].x + cs[2].x + cs[3].x) / 4;
+        const topY = Math.min(cs[0].y, cs[1].y, cs[2].y, cs[3].y);
+        return (
+          <div
+            className="absolute z-20 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-lg bg-white/97 p-0.5 shadow-lg ring-1 ring-neutral-200"
+            style={{ left: midX, top: topY - 10 }}
+          >
+            <button
+              onPointerDown={onMoveHandleDown}
+              onPointerMove={onMoveHandleMove}
+              onPointerUp={onMoveHandleUp}
+              onPointerCancel={onMoveHandleUp}
+              title="Drag to move (or use arrow keys)"
+              className="flex cursor-move items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+            >
+              <MoveIcon /> Move
+            </button>
+            <button
+              onClick={() => editor.mirrorSelectedFurniture()}
+              title="Mirror horizontally"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+            >
+              <MirrorIcon /> Mirror
+            </button>
+            <button
+              onClick={() => setEditingSel((v) => !v)}
+              title="Edit size and rotation"
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium hover:bg-neutral-100 ${editingSel ? "text-brand" : "text-neutral-700"}`}
+            >
+              <EditIcon /> Edit
+            </button>
+            <button
+              onClick={() => editor.deleteSelection()}
+              title="Delete (Del)"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+            >
+              <TrashIcon /> Delete
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Top-left: plan name + save status (only when saving is available) */}
       {persisting && (
@@ -1059,7 +1159,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
           onRename={(next) => editor.renameRoom(editor.selectedRoom!.id, next)}
         />
       )}
-      {editor.selectedFurniture && (
+      {editor.selectedFurniture && editingSel && (
         <FurniturePanel
           key={editor.selectedFurniture.id}
           kind={editor.selectedFurniture.kind}
@@ -1335,6 +1435,48 @@ function MicIcon() {
       <rect x="9" y="2" width="6" height="12" rx="3" />
       <path d="M5 10a7 7 0 0 0 14 0" />
       <line x1="12" y1="17" x2="12" y2="22" />
+    </svg>
+  );
+}
+
+function MoveIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 9l-3 3 3 3" />
+      <path d="M9 5l3-3 3 3" />
+      <path d="M15 19l-3 3-3-3" />
+      <path d="M19 9l3 3-3 3" />
+      <path d="M2 12h20" />
+      <path d="M12 2v20" />
+    </svg>
+  );
+}
+
+function MirrorIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v18" strokeDasharray="3 3" />
+      <path d="M8 7l-4 5 4 5z" />
+      <path d="M16 7l4 5-4 5z" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18" />
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M6 6l1 14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-14" />
     </svg>
   );
 }

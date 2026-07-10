@@ -109,6 +109,7 @@ export function drawFurniture(
   ctx.save();
   ctx.translate(c.x, c.y);
   ctx.rotate(-f.rotation); // world CCW -> canvas (Y-down)
+  if (f.flipX) ctx.scale(-1, 1); // mirror the icon within its own frame
   if (opts.ghost) ctx.globalAlpha = 0.55;
   if (def) {
     def.icon(ctx, hw, hh);
