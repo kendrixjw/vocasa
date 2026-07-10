@@ -1,19 +1,19 @@
-// Phase 18 - Bridge to the premium redesign modules.
+// Phase 18 + redesign phase 5 - the premium redesign modules, wired.
 //
-// Once a plan exists, the user can branch off into the Design (room) or
-// Landscaping (yard) add-ons: upload a real photo and get restyled,
-// photorealistic concept RENDERS. Those renders are a separate paid,
-// metered, image-to-image feature and are NOT part of v1 - so this component
-// is only the bridge/entry point. It establishes the flow and keeps the two
-// outputs visibly distinct: the plan is editable and to scale; redesign
-// renders are inspirational images. No image-model call, no billing here.
+// Once a plan exists, the user can branch into the Design (room) or Landscaping
+// (yard) add-ons: upload a real photo and get a restyled, photorealistic
+// concept RENDER back. Renders are a separate paid, metered, image-to-image
+// feature (POST /api/redesign): the first 2 per module are free, then each
+// costs a credit. The two outputs stay visibly distinct - the plan is editable
+// and to scale; renders are inspirational images that are neither.
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "@/lib/supabase/useSession";
+import { requestRedesign, fetchRenderQuota, type RenderQuota } from "@/lib/ai/redesign";
+import type { RedesignModule } from "@/lib/ai/redesignPrompt";
 
-type ModuleKey = "design" | "landscaping";
-
-const MODULES: { key: ModuleKey; title: string; blurb: string; accept: string }[] = [
+const MODULES: { key: RedesignModule; title: string; blurb: string; accept: string }[] = [
   {
     key: "design",
     title: "Design - room redesign",
@@ -29,9 +29,17 @@ const MODULES: { key: ModuleKey; title: string; blurb: string; accept: string }[
 ];
 
 export default function RedesignBridge({ hasPlan }: { hasPlan: boolean }) {
+  const { user } = useSession();
   const [open, setOpen] = useState(false);
-  const [module, setModule] = useState<ModuleKey | null>(null);
+  const [module, setModule] = useState<RedesignModule | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [style, setStyle] = useState("");
+
+  const [quota, setQuota] = useState<RenderQuota | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ url: string; source: "free" | "credit" } | null>(null);
+  const [error, setError] = useState<{ message: string; outOfCredits: boolean } | null>(null);
 
   // Release the object URL when it changes or the panel unmounts.
   useEffect(() => {
@@ -40,21 +48,63 @@ export default function RedesignBridge({ hasPlan }: { hasPlan: boolean }) {
     };
   }, [preview]);
 
-  const reset = useCallback(() => {
-    setModule(null);
+  // Load remaining free renders + credits whenever a module is chosen.
+  useEffect(() => {
+    if (!module || !user) {
+      setQuota(null);
+      return;
+    }
+    let active = true;
+    fetchRenderQuota(module).then((q) => {
+      if (active) setQuota(q);
+    });
+    return () => {
+      active = false;
+    };
+  }, [module, user]);
+
+  const clearPhoto = useCallback(() => {
+    setFile(null);
     setPreview((p) => {
       if (p) URL.revokeObjectURL(p);
       return null;
     });
+    setResult(null);
+    setError(null);
   }, []);
 
-  const onPhoto = useCallback((file: File | undefined) => {
-    if (!file) return;
+  const reset = useCallback(() => {
+    setModule(null);
+    setStyle("");
+    clearPhoto();
+  }, [clearPhoto]);
+
+  const onPhoto = useCallback((f: File | undefined) => {
+    if (!f) return;
+    setError(null);
+    setResult(null);
+    setFile(f);
     setPreview((p) => {
       if (p) URL.revokeObjectURL(p);
-      return URL.createObjectURL(file);
+      return URL.createObjectURL(f);
     });
   }, []);
+
+  const generate = useCallback(async () => {
+    if (!module || !file || busy) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    const res = await requestRedesign(module, style, file);
+    if (res.kind === "render") {
+      setResult({ url: res.url, source: res.source });
+      const q = await fetchRenderQuota(module);
+      setQuota(q);
+    } else {
+      setError({ message: res.message, outOfCredits: res.code === "insufficient_credits" });
+    }
+    setBusy(false);
+  }, [module, file, style, busy]);
 
   const active = MODULES.find((m) => m.key === module) ?? null;
 
@@ -103,8 +153,49 @@ export default function RedesignBridge({ hasPlan }: { hasPlan: boolean }) {
 
           {active && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs font-semibold text-fuchsia-800">{active.title}</div>
-              {preview ? (
+              <div className="flex items-center gap-2 text-xs font-semibold text-fuchsia-800">
+                {active.title}
+                {quota && (
+                  <span className="ml-auto font-normal text-neutral-500">
+                    {quota.freeRemaining > 0
+                      ? `${quota.freeRemaining} free left`
+                      : `${quota.credits} credit${quota.credits === 1 ? "" : "s"}`}
+                  </span>
+                )}
+              </div>
+
+              {!user && (
+                <div className="rounded-lg bg-amber-50 px-2 py-1.5 text-xs leading-snug text-amber-800 ring-1 ring-amber-200">
+                  Sign in to generate renders.
+                </div>
+              )}
+
+              {result ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={result.url}
+                    alt="Redesign concept render"
+                    className="w-full rounded-lg ring-1 ring-stone-200"
+                  />
+                  <div className="flex items-center justify-between text-xs text-neutral-500">
+                    <span>{result.source === "free" ? "Free render" : "1 credit used"}</span>
+                    <a
+                      href={result.url}
+                      download={`redesign-${active.key}.png`}
+                      className="font-medium text-fuchsia-700 hover:underline"
+                    >
+                      Download
+                    </a>
+                  </div>
+                  <button
+                    onClick={clearPhoto}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-fuchsia-800 ring-1 ring-fuchsia-100 transition hover:bg-fuchsia-50"
+                  >
+                    Try another photo
+                  </button>
+                </>
+              ) : preview ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={preview}
@@ -127,9 +218,22 @@ export default function RedesignBridge({ hasPlan }: { hasPlan: boolean }) {
                 </label>
               )}
 
-              <div className="rounded-lg bg-amber-50 px-2 py-1.5 text-xs leading-snug text-amber-800 ring-1 ring-amber-200">
-                Coming soon. Restyled renders launch as a paid add-on - your first 2 renders per module are free.
-              </div>
+              {!result && (
+                <input
+                  value={style}
+                  onChange={(e) => setStyle(e.target.value)}
+                  placeholder="Style, e.g. warm mid-century, coastal"
+                  className="rounded-lg bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-800 outline-none ring-1 ring-neutral-200 placeholder:text-neutral-400 focus:ring-fuchsia-300"
+                />
+              )}
+
+              {error && (
+                <div className="rounded-lg bg-red-50 px-2 py-1.5 text-xs leading-snug text-red-700 ring-1 ring-red-200">
+                  {error.outOfCredits
+                    ? "You're out of free renders and credits for this module. Credit packs are coming soon."
+                    : error.message}
+                </div>
+              )}
 
               <div className="flex justify-end gap-2">
                 <button
@@ -138,13 +242,15 @@ export default function RedesignBridge({ hasPlan }: { hasPlan: boolean }) {
                 >
                   Back
                 </button>
-                <button
-                  disabled
-                  title="Available at launch"
-                  className="rounded-lg bg-fuchsia-600 px-3 py-1 text-xs font-medium text-white opacity-50"
-                >
-                  Generate
-                </button>
+                {!result && (
+                  <button
+                    onClick={generate}
+                    disabled={!file || busy || !user}
+                    className="rounded-lg bg-fuchsia-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-fuchsia-500 disabled:opacity-50"
+                  >
+                    {busy ? "Rendering…" : "Generate"}
+                  </button>
+                )}
               </div>
             </div>
           )}
