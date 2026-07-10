@@ -8,10 +8,33 @@
 // accounting is server-side and tied to the session user.
 
 import { generateText } from "ai";
+import { put } from "@vercel/blob";
 import { getSupabaseServerClient } from "@/lib/supabase/server.ts";
 import { buildRedesignPrompt, type RedesignModule } from "@/lib/ai/redesignPrompt.ts";
 
 export const runtime = "nodejs";
+
+function blobConfigured(): boolean {
+  return !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_OIDC_TOKEN);
+}
+
+// Save the render and return what to persist in renders.result_url: a private
+// Blob pathname, or an inline data URL when Blob isn't configured.
+async function storeRender(
+  userId: string,
+  renderId: string,
+  base64: string,
+  mediaType: string,
+): Promise<string> {
+  if (!blobConfigured()) {
+    return `data:${mediaType};base64,${base64}`;
+  }
+  const ext = mediaType.split("/")[1] || "png";
+  const pathname = `renders/${userId}/${renderId}.${ext}`;
+  const bytes = Buffer.from(base64, "base64");
+  const blob = await put(pathname, bytes, { access: "private", contentType: mediaType });
+  return blob.pathname;
+}
 
 // Multimodal image model that accepts an input photo and returns a restyled
 // image (image-to-image), routed through the AI Gateway.
@@ -108,18 +131,22 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ error: "The model didn't return an image. Try again." }, { status: 502 });
     }
 
-    const url = `data:${file.mediaType};base64,${file.base64}`;
+    // Persist the render. Preferred: private Vercel Blob (store the pathname).
+    // Fallback when Blob isn't configured: an inline data URL, so the feature
+    // still works locally. Either way it's served through /api/renders/[id].
+    const outType = file.mediaType ?? "image/png";
+    const stored = await storeRender(user.id, renderId, file.base64, outType);
+
     const fin = await supabase.rpc("finalize_render", {
       p_render_id: renderId,
-      p_result_url: url,
+      p_result_url: stored,
       p_style: style,
       p_cost_cents: RENDER_COST_CENTS,
     });
     if (fin.error) {
-      // The image exists but bookkeeping failed; still hand it back.
-      return Response.json({ render: { id: renderId, url, source } });
+      return Response.json({ error: "Render saved but couldn't be recorded. Try again." }, { status: 500 });
     }
-    return Response.json({ render: { id: renderId, url, source } });
+    return Response.json({ render: { id: renderId, url: `/api/renders/${renderId}`, source } });
   } catch (err) {
     await supabase.rpc("fail_render", { p_render_id: renderId });
     const status = typeof (err as { statusCode?: number })?.statusCode === "number"
