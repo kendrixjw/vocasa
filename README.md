@@ -18,6 +18,8 @@ never images.** Every dimension is imperial, stored internally in inches.
 - **Anthropic API** (`claude-opus-4-8`) for voice/text parsing and design assist — proxied server-side
 - **Web Speech API** for in-browser voice capture
 - **Supabase** (auth + Postgres, Row Level Security) for persistence
+- **Vercel AI Gateway** (`ai` SDK) for premium image-to-image redesign renders
+- **Stripe** for metered render credits (packs + subscription tiers)
 - **jsPDF** for PDF export
 
 ## Getting started
@@ -37,6 +39,9 @@ Open http://localhost:3000.
 | `ANTHROPIC_API_KEY` | Voice/text commands, design assist, decor suggestions | **Server-side only** — never shipped to the client |
 | `NEXT_PUBLIC_SUPABASE_URL` | Save/load, dashboard | Public; RLS enforces access |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Save/load, dashboard | Public; anon key is safe to ship |
+| `VERCEL_OIDC_TOKEN` / `AI_GATEWAY_API_KEY` | Premium redesign renders | AI Gateway auth; OIDC token comes from `vercel env pull` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Redesign billing webhook | **Server-side only** — lets the Stripe webhook credit any account; bypasses RLS |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Buying render credits | Server-side; Price IDs for the packs/tiers (see `.env.local.example`) |
 
 The app **degrades gracefully**: with no Supabase keys it runs in local-only mode
 (`/editor/local`, no save); without an Anthropic key the command bar and assist
@@ -45,9 +50,11 @@ report a clear error but hand editing still works.
 ### Supabase setup
 
 1. Create a Supabase project.
-2. Run the migration [`supabase/migrations/0001_plans.sql`](supabase/migrations/0001_plans.sql)
-   in the SQL editor (creates the `plans` table, owner-only RLS policies, an
-   auto-`updated_at` trigger, and an owner index).
+2. Run the migrations in [`supabase/migrations/`](supabase/migrations/) in order:
+   `0001_plans.sql` (the `plans` table, owner-only RLS, `updated_at` trigger,
+   owner index), then `0002_renders.sql` and `0003_billing.sql` if you're
+   enabling premium renders (render credits/history + tamper-proof credit
+   accounting, and Stripe billing tables).
 3. Add your dev/prod origin to the Auth redirect URLs (e.g. `http://localhost:3000`).
 4. Sign in is passwordless **magic link** (email OTP).
 
@@ -62,6 +69,11 @@ report a clear error but hand editing still works.
   optionally with a reference photo — into a text scheme: a palette of hex
   swatches, materials, and furnishing ideas with **honest Google Shopping search
   links**. Text only, **no image renders**, and never fabricated product URLs.
+- **Redesign renders** (Premium ✨) turn a real photo of a room or yard into a
+  restyled, photorealistic **concept image** via the Design (room) or Landscaping
+  (yard) module. Renders are inspirational — **not to scale, not editable** — and
+  kept visibly distinct from your precise plan. Metered: the first 2 renders per
+  module are free, then each costs a credit (buy packs or a monthly plan).
 - **By hand:** draw walls, drag/rotate/resize furniture, place doors/windows. Rooms
   auto-detect from enclosed walls with live square footage. Everything undoes
   (Ctrl/Cmd+Z).
@@ -98,6 +110,11 @@ app/
   editor/[id]/page.tsx   the editor bound to a plan
   api/parse, api/assist  server-side Anthropic proxies
   api/decor              decor-scheme proxy (plan + style [+ photo] -> palette/materials/items)
+  api/redesign           premium image-to-image renders via AI Gateway (authed, metered)
+  api/billing/*          Stripe checkout / webhook / portal for render credits
+lib/
+  billing/               Stripe client, product catalog, checkout helper
+  supabase/admin.ts      service-role client (webhook only) — bypasses RLS, server-only
 components/CanvasStage.tsx  the React shell (sizing, input routing, HUD, all controls)
 proxy.ts                 refreshes the Supabase session cookie (Next 16 proxy convention)
 ```
@@ -130,6 +147,7 @@ manually; everything else has unit coverage.
 
 In: multiple floors, imperial units, voice + hand editing, save/load, PNG/PDF/DXF
 export, dimensions/annotations, photo input (photo → editable plan), share links +
-comments, and AI decor suggestions.
-Out (deliberately): DWG, 3D, arcs/splines, AI image renders — this is a consumer
-tool, not a blueprint editor. (Restyled photo renders are a planned paid add-on.)
+comments, AI decor suggestions, and premium redesign renders (paid, metered).
+Out (deliberately): DWG, 3D, arcs/splines — this is a consumer tool, not a
+blueprint editor. Redesign renders stay clearly separate: inspirational images,
+never editable or to-scale geometry.
