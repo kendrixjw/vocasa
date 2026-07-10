@@ -3,7 +3,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPlan, deletePlan, listPlans, setShareToken, type PlanSummary } from "@/lib/persistence/plans";
@@ -12,9 +12,23 @@ import { siteUrl } from "@/lib/supabase/config";
 
 export default function Dashboard({ user }: { user: User }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [plans, setPlans] = useState<PlanSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // Toast after returning from Stripe Checkout (?billing=success|cancelled).
+  // Strip the param so it doesn't re-toast on refresh, and auto-dismiss.
+  const [billingToast, setBillingToast] = useState<"success" | "cancelled" | null>(null);
+  useEffect(() => {
+    const billing = searchParams.get("billing");
+    if (billing === "success" || billing === "cancelled") {
+      setBillingToast(billing);
+      router.replace("/dashboard");
+      const t = setTimeout(() => setBillingToast(null), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [searchParams, router]);
 
   const refresh = useCallback(async () => {
     try {
@@ -90,6 +104,27 @@ export default function Dashboard({ user }: { user: User }) {
 
   return (
     <div className="min-h-full bg-stone-50">
+      {billingToast && (
+        <div
+          role="status"
+          className={`fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ring-1 ${
+            billingToast === "success"
+              ? "bg-emerald-600 text-white ring-emerald-500"
+              : "bg-white text-stone-700 ring-stone-200"
+          }`}
+        >
+          {billingToast === "success"
+            ? "Payment complete — your render credits are on the way."
+            : "Checkout cancelled — no charge was made."}
+          <button
+            onClick={() => setBillingToast(null)}
+            className="ml-1 opacity-70 transition hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <header className="flex items-center justify-between border-b border-stone-200 bg-white px-6 py-4">
         <div className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
