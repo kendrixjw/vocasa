@@ -34,7 +34,7 @@ Open http://localhost:3000.
 
 | Variable | Required for | Notes |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Voice/text commands, design assist | **Server-side only** — never shipped to the client |
+| `ANTHROPIC_API_KEY` | Voice/text commands, design assist, decor suggestions | **Server-side only** — never shipped to the client |
 | `NEXT_PUBLIC_SUPABASE_URL` | Save/load, dashboard | Public; RLS enforces access |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Save/load, dashboard | Public; anon key is safe to ship |
 
@@ -58,6 +58,10 @@ report a clear error but hand editing still works.
   become several operations, applied as a single undo step.
 - **Design assist** (✨) gives plain-English feedback and can propose changes you
   **preview on the canvas and Apply or Discard** — never auto-committed.
+- **Decor suggestions** turn a style direction (*"warm mid-century modern"*) —
+  optionally with a reference photo — into a text scheme: a palette of hex
+  swatches, materials, and furnishing ideas with **honest Google Shopping search
+  links**. Text only, **no image renders**, and never fabricated product URLs.
 - **By hand:** draw walls, drag/rotate/resize furniture, place doors/windows. Rooms
   auto-detect from enclosed walls with live square footage. Everything undoes
   (Ctrl/Cmd+Z).
@@ -93,6 +97,7 @@ app/
   page.tsx               dashboard / auth gate / local-mode fallback
   editor/[id]/page.tsx   the editor bound to a plan
   api/parse, api/assist  server-side Anthropic proxies
+  api/decor              decor-scheme proxy (plan + style [+ photo] -> palette/materials/items)
 components/CanvasStage.tsx  the React shell (sizing, input routing, HUD, all controls)
 proxy.ts                 refreshes the Supabase session cookie (Next 16 proxy convention)
 ```
