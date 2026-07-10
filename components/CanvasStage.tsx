@@ -18,6 +18,7 @@ import { isPlanData } from "@/lib/persistence/plan";
 import { makeThumbnail } from "@/lib/persistence/thumbnail";
 import { exportPng, exportPdf, exportDxf } from "@/lib/export/exportPlan";
 import RedesignBridge from "@/components/RedesignBridge";
+import DecorPanel from "@/components/DecorPanel";
 import { rooms, walls } from "@/lib/model/document";
 
 type PersistenceProps = {
@@ -719,6 +720,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             <SparkleIcon />
             {assistBusy ? "Thinking…" : "Design assist"}
           </button>
+          <DecorPanel editor={editor} />
           <RedesignBridge hasPlan={hasPlan} />
         </div>
 
