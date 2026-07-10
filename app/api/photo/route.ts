@@ -50,7 +50,10 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const message = await client.messages.create({
       model: "claude-opus-4-8",
-      max_tokens: 4096,
+      // Adaptive thinking spends part of this budget before any ops are emitted,
+      // and a multi-room plan is a long JSON array — 4096 truncated real plans
+      // mid-array. Give ample room so the array can complete.
+      max_tokens: 16000,
       thinking: { type: "adaptive" },
       system,
       messages: [
@@ -75,6 +78,13 @@ export async function POST(req: Request): Promise<Response> {
 
     const parsed = extractJsonArray(text);
     if (parsed === null) {
+      // If we ran out of tokens, the array was truncated (not "no floorplan").
+      if (message.stop_reason === "max_tokens") {
+        return Response.json(
+          { error: "That plan was too detailed to finish reading. Try a simpler or more cropped image." },
+          { status: 502 },
+        );
+      }
       return Response.json({ ops: [] });
     }
     return Response.json({ ops: parsed });
