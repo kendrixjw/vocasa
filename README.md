@@ -123,6 +123,8 @@ manually; everything else has unit coverage.
 
 ## Scope (v1)
 
-In: single floor, imperial units, voice + hand editing, save/load, PNG/PDF.
-Out (deliberately): DXF/DWG, multi-floor, 3D, arcs/splines, photo input — this is a
-consumer tool, not a blueprint editor.
+In: multiple floors, imperial units, voice + hand editing, save/load, PNG/PDF/DXF
+export, dimensions/annotations, photo input (photo → editable plan), share links +
+comments, and AI decor suggestions.
+Out (deliberately): DWG, 3D, arcs/splines, AI image renders — this is a consumer
+tool, not a blueprint editor. (Restyled photo renders are a planned paid add-on.)
