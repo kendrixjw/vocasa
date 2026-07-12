@@ -25,7 +25,7 @@ import { createAnnotation, drawAnnotation, hitTestAnnotation } from "./model/ann
 import { syncRooms } from "./rooms/sync.ts";
 import { History } from "./history.ts";
 import type { Command } from "./history.ts";
-import { AddEntities, DeleteEntities, EditAnnotation, EditOpening, MirrorFurniture, RenameRoom, SetFurnitureTransform } from "./commands.ts";
+import { AddEntities, DeleteEntities, EditAnnotation, EditOpening, MirrorFurniture, RenameRoom, SetFurnitureTransform, TranslateEntities } from "./commands.ts";
 import type { OpeningPatch } from "./commands.ts";
 import type { PointerInfo, Tool } from "./tools/tool.ts";
 import { PLAN_VERSION, type FloorData, type PlanData } from "./persistence/plan.ts";
@@ -299,6 +299,96 @@ export class Editor {
     const id = [...this.selection][0];
     const e = this.doc.entities.find((x) => x.id === id);
     return e && e.type === "room" ? e : null;
+  }
+
+  // --- Room editing (rooms are derived from walls) -------------------------
+
+  /** Wall ids of `room` that are also part of another room (a shared boundary). */
+  private roomSharedWalls(room: Room): Set<string> {
+    const mine = new Set(room.wallIds);
+    const shared = new Set<string>();
+    for (const r of rooms(this.doc)) {
+      if (r.id === room.id) continue;
+      for (const wid of r.wallIds) if (mine.has(wid)) shared.add(wid);
+    }
+    return shared;
+  }
+
+  /** A room can be moved rigidly only when it's standalone: no wall shared with
+   *  another room, and no outside wall attached at any of its corners (moving
+   *  would otherwise distort a neighbour or tear the loop open). */
+  roomIsMovable(room: Room): boolean {
+    if (this.roomSharedWalls(room).size > 0) return false;
+    const mine = new Set(room.wallIds);
+    const ws = walls(this.doc);
+    const roomWalls = ws.filter((w) => mine.has(w.id));
+    const outside = ws.filter((w) => !mine.has(w.id));
+    const TOL = 0.75; // matches the loop-detector's endpoint merge tolerance
+    for (const w of roomWalls) {
+      for (const p of [w.a, w.b]) {
+        for (const o of outside) {
+          for (const q of [o.a, o.b]) {
+            if (Math.hypot(p.x - q.x, p.y - q.y) <= TOL) return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  /** Snapshot a room's wall endpoints so a live drag can set absolute positions. */
+  roomWallSnapshot(room: Room): Map<string, { a: Point; b: Point }> {
+    const mine = new Set(room.wallIds);
+    const snap = new Map<string, { a: Point; b: Point }>();
+    for (const w of walls(this.doc)) {
+      if (mine.has(w.id)) snap.set(w.id, { a: { ...w.a }, b: { ...w.b } });
+    }
+    return snap;
+  }
+
+  /** Live-move a room's walls to snapshot + delta and re-sync (no history). */
+  dragRoom(snap: Map<string, { a: Point; b: Point }>, dx: number, dy: number): void {
+    for (const e of this.doc.entities) {
+      if (e.type !== "wall") continue;
+      const s = snap.get(e.id);
+      if (s) {
+        e.a = { x: s.a.x + dx, y: s.a.y + dy };
+        e.b = { x: s.b.x + dx, y: s.b.y + dy };
+      }
+    }
+    this.refreshRooms();
+    this.onDirty();
+  }
+
+  /** Commit a room move as one undo step. Restores the snapshot first so the
+   *  command captures a clean before/after. */
+  commitRoomMove(room: Room, snap: Map<string, { a: Point; b: Point }>, dx: number, dy: number): void {
+    for (const e of this.doc.entities) {
+      if (e.type !== "wall") continue;
+      const s = snap.get(e.id);
+      if (s) {
+        e.a = { ...s.a };
+        e.b = { ...s.b };
+      }
+    }
+    if (dx === 0 && dy === 0) {
+      this.refreshRooms();
+      this.onDirty();
+      return;
+    }
+    this.execute(new TranslateEntities([...snap.keys()], dx, dy));
+  }
+
+  /** Delete a room by removing its walls — but keep any wall shared with a
+   *  neighbouring room so that neighbour survives. */
+  deleteRoom(id: string): void {
+    const room = this.doc.entities.find((e) => e.id === id);
+    if (!room || room.type !== "room") return;
+    const shared = this.roomSharedWalls(room);
+    const ids = room.wallIds.filter((w) => !shared.has(w));
+    if (ids.length === 0) return; // fully enclosed by neighbours; nothing safe to remove
+    this.selection.clear();
+    this.execute(new DeleteEntities(ids));
   }
 
   /** The single selected furniture block, if any (for the panel). */

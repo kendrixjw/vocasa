@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Point } from "@/lib/viewport";
 import { Editor } from "@/lib/editor";
 import { formatFeetInches } from "@/lib/units";
-import { formatSqFt } from "@/lib/model/room";
+import { formatSqFt, roomCentroid } from "@/lib/model/room";
 import { FURNITURE, furnitureDef, type IconDraw } from "@/lib/furniture/library";
 import type { PointerInfo } from "@/lib/tools/tool";
 import { runCommand, type CommandOutcome } from "@/lib/ai/client";
@@ -328,6 +328,49 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
       }
     },
     [editor],
+  );
+
+  // --- Room selection toolbar (Move / Edit-rename / Delete) ----------------
+  const [editingRoom, setEditingRoom] = useState(false);
+  const selRoom = editor.selectedRoom;
+  useEffect(() => {
+    setEditingRoom(false);
+  }, [selRoom?.id]);
+
+  const roomDrag = useRef<{ startScreen: Point; snap: Map<string, { a: Point; b: Point }> } | null>(null);
+  const onRoomMoveDown = useCallback(
+    (e: React.PointerEvent) => {
+      const r = editor.selectedRoom;
+      if (!r || !editor.roomIsMovable(r)) return;
+      e.preventDefault();
+      roomDrag.current = { startScreen: canvasScreen(e), snap: editor.roomWallSnapshot(r) };
+      (e.target as Element).setPointerCapture(e.pointerId);
+    },
+    [editor, canvasScreen],
+  );
+  const onRoomMoveMove = useCallback(
+    (e: React.PointerEvent) => {
+      const rd = roomDrag.current;
+      if (!rd) return;
+      const w0 = editor.toWorld(rd.startScreen);
+      const w1 = editor.toWorld(canvasScreen(e));
+      editor.dragRoom(rd.snap, w1.x - w0.x, w1.y - w0.y);
+      forceHud();
+    },
+    [editor, canvasScreen],
+  );
+  const onRoomMoveUp = useCallback(
+    (e: React.PointerEvent) => {
+      const rd = roomDrag.current;
+      if (!rd) return;
+      roomDrag.current = null;
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
+      const r = editor.selectedRoom;
+      const w0 = editor.toWorld(rd.startScreen);
+      const w1 = editor.toWorld(canvasScreen(e));
+      if (r) editor.commitRoomMove(r, rd.snap, w1.x - w0.x, w1.y - w0.y);
+    },
+    [editor, canvasScreen],
   );
 
   // --- Share link (read-only viewer + comments) ----------------------------
@@ -674,6 +717,47 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             <button
               onClick={() => editor.deleteSelection()}
               title="Delete (Del)"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+            >
+              <TrashIcon /> Delete
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Floating action toolbar for a selected room */}
+      {selRoom && (() => {
+        const ps = selRoom.poly.map((p) => editor.toScreen(p));
+        if (ps.length === 0) return null;
+        const topY = Math.min(...ps.map((p) => p.y));
+        const midX = editor.toScreen(roomCentroid(selRoom)).x;
+        const movable = editor.roomIsMovable(selRoom);
+        return (
+          <div
+            className="absolute z-20 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-lg bg-white/97 p-0.5 shadow-lg ring-1 ring-neutral-200"
+            style={{ left: midX, top: topY - 10 }}
+          >
+            <button
+              onPointerDown={onRoomMoveDown}
+              onPointerMove={onRoomMoveMove}
+              onPointerUp={onRoomMoveUp}
+              onPointerCancel={onRoomMoveUp}
+              disabled={!movable}
+              title={movable ? "Drag to move the room" : "This room shares a wall with a neighbour, so it can't be moved on its own"}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${movable ? "cursor-move text-neutral-700 hover:bg-neutral-100" : "cursor-not-allowed text-neutral-300"}`}
+            >
+              <MoveIcon /> Move
+            </button>
+            <button
+              onClick={() => setEditingRoom((v) => !v)}
+              title="Rename this room"
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium hover:bg-neutral-100 ${editingRoom ? "text-brand" : "text-neutral-700"}`}
+            >
+              <EditIcon /> Rename
+            </button>
+            <button
+              onClick={() => editor.deleteRoom(selRoom.id)}
+              title="Delete this room (removes its walls, keeps any shared with a neighbour)"
               className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
             >
               <TrashIcon /> Delete
@@ -1151,7 +1235,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
       </div>
 
       {/* Right: properties panel for the current selection */}
-      {editor.selectedRoom && (
+      {editor.selectedRoom && editingRoom && (
         <RoomPanel
           key={editor.selectedRoom.id}
           name={editor.selectedRoom.name}
