@@ -3,11 +3,15 @@
 // viewport and units.
 
 import type { Entity } from "../model/types.ts";
+import type { CostSettings } from "../cost/estimate.ts";
 import type { Viewport } from "../viewport.ts";
 
 // v2 added dimension + annotation entities (additive).
 // v3 added multiple floors: `floors` + `activeFloorId`. Older v1/v2 saves have a
 // single `entities` array and load as one "Ground floor" (see editor.load).
+// `cost` is additive and optional (saves without it fall back to the default
+// finish/mode), so it needs no version bump and no migration — it rides along in
+// the existing `plans.data` jsonb.
 export const PLAN_VERSION = 3 as const;
 
 export type FloorData = { id: string; name: string; entities: Entity[] };
@@ -21,6 +25,8 @@ export type PlanData = {
   activeFloorId?: string;
   // legacy v1/v2 single-floor form:
   entities?: Entity[];
+  /** Cost-estimator finish/mode. Optional; absent on older saves. */
+  cost?: CostSettings;
 };
 
 /** Best-effort validation of untrusted plan JSON loaded from storage. */

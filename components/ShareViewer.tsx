@@ -8,6 +8,8 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Editor } from "@/lib/editor";
 import type { Point } from "@/lib/viewport";
 import { isPlanData } from "@/lib/persistence/plan";
+import { FINISHES, MODES, estimate } from "@/lib/cost/estimate";
+import CostSummary, { CostDisclaimer } from "@/components/CostSummary";
 import {
   addSharedComment,
   getSharedComments,
@@ -174,8 +176,53 @@ export default function ShareViewer({ token }: { token: string }) {
             </div>
           )}
         </div>
-        <CommentsPanel token={token} />
+        <aside className="flex w-80 flex-col border-l border-stone-200 bg-white">
+          {status === "ready" && <SharedCost editor={editor} />}
+          <CommentsPanel token={token} />
+        </aside>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The owner's cost estimate, read-only. The finish/mode came with the plan and
+ * aren't adjustable here — a viewer changing them would misrepresent what the
+ * owner shared, so they're stated as labels instead of controls.
+ */
+function SharedCost({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(true);
+  const { finish, mode } = editor.costSettings;
+  const est = estimate(editor.allFloorEntities(), editor.costSettings);
+  if (est.totalAreaSqFt === 0) return null;
+
+  const finishLabel = FINISHES.find((f) => f.id === finish)?.label ?? finish;
+  const modeLabel = MODES.find((m) => m.id === mode)?.label ?? mode;
+
+  return (
+    <div className="border-b border-stone-200">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-stone-50"
+      >
+        <span className="text-sm font-semibold text-stone-700">Cost estimate</span>
+        <span className="ml-auto text-xs text-stone-400">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-3">
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200">
+              {modeLabel}
+            </span>
+            <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">
+              {finishLabel} finish
+            </span>
+          </div>
+          <CostSummary est={est} />
+          <CostDisclaimer />
+        </div>
+      )}
     </div>
   );
 }
@@ -245,7 +292,7 @@ function CommentsPanel({ token }: { token: string }) {
   };
 
   return (
-    <aside className="flex w-80 flex-col border-l border-stone-200 bg-white">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-stone-100 px-4 py-3 text-sm font-semibold text-stone-700">
         Comments
       </div>
@@ -293,7 +340,7 @@ function CommentsPanel({ token }: { token: string }) {
           {busy ? "Posting…" : "Post comment"}
         </button>
       </div>
-    </aside>
+    </div>
   );
 }
 

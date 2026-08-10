@@ -23,6 +23,7 @@ import { drawOpening, findWall } from "./model/opening.ts";
 import { drawDimension } from "./model/dimension.ts";
 import { createAnnotation, drawAnnotation, hitTestAnnotation } from "./model/annotation.ts";
 import { syncRooms } from "./rooms/sync.ts";
+import { DEFAULT_COST_SETTINGS, normalizeCostSettings, type CostSettings, type FloorEntities } from "./cost/estimate.ts";
 import { History } from "./history.ts";
 import type { Command } from "./history.ts";
 import { AddEntities, DeleteEntities, EditAnnotation, EditOpening, MirrorFurniture, RenameRoom, SetFurnitureTransform, TranslateEntities } from "./commands.ts";
@@ -156,6 +157,30 @@ export class Editor {
     return id === this.doc.activeFloorId ? this.doc.entities : this.doc.stash[id] ?? [];
   }
 
+  // --- Cost estimator -------------------------------------------------------
+  // Not geometry: a per-plan assumption (finish level + build vs renovation)
+  // that rides along in the saved plan. Changing it bumps the revision so the
+  // existing autosave picks it up.
+  costSettings: CostSettings = { ...DEFAULT_COST_SETTINGS };
+
+  setCostSettings(patch: Partial<CostSettings>): void {
+    const next = { ...this.costSettings, ...patch };
+    if (next.finish === this.costSettings.finish && next.mode === this.costSettings.mode) return;
+    this.costSettings = next;
+    this._revision++;
+    this.onChange();
+  }
+
+  /** Every floor's entities, live (no clone) — for read-only derivations like
+   *  the cost estimate. Callers must not mutate the arrays. */
+  allFloorEntities(): FloorEntities[] {
+    return this.doc.floors.map((f) => ({
+      id: f.id,
+      name: f.name,
+      entities: this.floorEntities(f.id),
+    }));
+  }
+
   /** Serialize the current plan for storage (version 3, multi-floor). */
   serialize(): PlanData {
     const floors: FloorData[] = this.doc.floors.map((f) => ({
@@ -169,12 +194,14 @@ export class Editor {
       viewport: { ...this.viewport },
       floors,
       activeFloorId: this.doc.activeFloorId,
+      cost: { ...this.costSettings },
     };
   }
 
   /** Replace the current plan from stored data. Clears history & selection. */
   load(data: PlanData): void {
     this.doc = createDocument();
+    this.costSettings = data.cost ? normalizeCostSettings(data.cost) : { ...DEFAULT_COST_SETTINGS };
 
     // Normalize to the multi-floor form. Legacy v1/v2 saves have a single
     // `entities` array -> load as one "Ground floor".
