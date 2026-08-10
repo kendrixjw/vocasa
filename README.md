@@ -82,6 +82,12 @@ report a clear error but hand editing still works.
 - **Select a furniture item** for a floating toolbar — **Move** (drag the handle,
   or nudge with arrow keys; Shift = 10″ steps), **Mirror** (flip horizontally),
   **Edit** (width/depth/rotation), **Delete** (or the Del key).
+- **Cost estimate** turns the drawn square footage into a rough build or
+  renovation budget at an Economy/Standard/Premium finish level, broken into
+  structure, finishes, and furniture, with a per-floor split. Local arithmetic on
+  the real room polygons — **no AI, order-of-magnitude only, not a bid.** The
+  finish and mode are saved with the plan, so share-link viewers see the same
+  figure (read-only — they can't re-run it at a different finish level).
 - **Save** is automatic (~2s debounce) plus Ctrl/Cmd+S; your plans show as
   thumbnails on the dashboard.
 - **Share** exports a clean PNG or PDF.
@@ -108,6 +114,7 @@ lib/
     client.ts, assist.ts client orchestration (parse / design assist)
   voice/speech.ts        Web Speech API wrapper (mic = just a transcript source)
   persistence/           serialize/load, Supabase CRUD, thumbnails
+  cost/estimate.ts       rough build/reno cost from room areas (pure, no AI)
   export/exportPlan.ts   PNG / PDF rendering
   supabase/              browser + server clients, session hook, config
 app/
@@ -153,7 +160,8 @@ manually; everything else has unit coverage.
 
 In: multiple floors, imperial units, voice + hand editing, save/load, PNG/PDF/DXF
 export, dimensions/annotations, photo input (photo → editable plan), share links +
-comments, AI decor suggestions, and premium redesign renders (paid, metered).
+comments, AI decor suggestions, a rough cost estimate, and premium redesign
+renders (paid, metered).
 Out (deliberately): DWG, 3D, arcs/splines — this is a consumer tool, not a
 blueprint editor. Redesign renders stay clearly separate: inspirational images,
 never editable or to-scale geometry.

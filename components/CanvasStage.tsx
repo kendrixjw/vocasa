@@ -19,6 +19,7 @@ import { makeThumbnail } from "@/lib/persistence/thumbnail";
 import { exportPng, exportPdf, exportDxf } from "@/lib/export/exportPlan";
 import RedesignBridge from "@/components/RedesignBridge";
 import DecorPanel from "@/components/DecorPanel";
+import CostPanel from "@/components/CostPanel";
 import { rooms, walls } from "@/lib/model/document";
 import { corners } from "@/lib/model/furniture";
 
@@ -904,6 +905,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             <SparkleIcon />
             {assistBusy ? "Thinking…" : "Design assist"}
           </button>
+          <CostPanel editor={editor} />
           <DecorPanel editor={editor} />
           <RedesignBridge hasPlan={hasPlan} />
         </div>
