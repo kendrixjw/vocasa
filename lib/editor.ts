@@ -23,6 +23,7 @@ import { drawOpening, findWall } from "./model/opening.ts";
 import { drawDimension } from "./model/dimension.ts";
 import { createAnnotation, drawAnnotation, hitTestAnnotation } from "./model/annotation.ts";
 import { syncRooms } from "./rooms/sync.ts";
+import { findTemplate, templateEntities } from "./rooms/templates.ts";
 import { DEFAULT_COST_SETTINGS, normalizeCostSettings, type CostSettings, type FloorEntities } from "./cost/estimate.ts";
 import { History } from "./history.ts";
 import type { Command } from "./history.ts";
@@ -49,6 +50,9 @@ const COLOR_MAJOR = "#d6d3d1";
 const COLOR_AXIS = "#a8a29e";
 
 const SNAP_PX = 10; // snap threshold in screen pixels
+
+// Clearance between existing content and a newly dropped room template (inches).
+const TEMPLATE_GAP = 36;
 
 export class Editor {
   doc: Document = createDocument();
@@ -179,6 +183,52 @@ export class Editor {
       name: f.name,
       entities: this.floorEntities(f.id),
     }));
+  }
+
+  // --- Room templates -------------------------------------------------------
+  /**
+   * Drop a ready-made room (walls + furniture) as a single undo step.
+   *
+   * Placed clear of whatever is already drawn — to the east of the current
+   * content with a gap, bottom-aligned — so a template never lands on top of
+   * existing walls and silently merges with them. On an empty floor it goes at
+   * the viewport center. Fits the view only if the new room wouldn't otherwise
+   * be on screen, so dropping one while zoomed in doesn't yank the camera.
+   */
+  addRoomTemplate(key: string): void {
+    const tpl = findTemplate(key);
+    if (!tpl) return;
+
+    const w = tpl.width * 12;
+    const h = tpl.height * 12;
+    const current = extents(this.doc);
+    const origin: Point = current
+      ? { x: current.maxX + TEMPLATE_GAP, y: current.minY }
+      : { x: this.aiCursor.x - w / 2, y: this.aiCursor.y - h / 2 };
+
+    const entities = templateEntities(tpl, origin);
+    this.execute(new AddEntities(entities));
+
+    const room = entities.find((e) => e.type === "room");
+    if (room) this.setSelection([room.id]);
+
+    const box: Bounds = { minX: origin.x, minY: origin.y, maxX: origin.x + w, maxY: origin.y + h };
+    if (!this.isVisible(box)) this.fit();
+    this.setStatus(`Added a ${tpl.label.toLowerCase()}.`);
+  }
+
+  /** True when `b` lies entirely inside the current view. */
+  private isVisible(b: Bounds): boolean {
+    const { width, height } = this.size;
+    if (width === 0 || height === 0) return true; // nothing rendered yet
+    const a = screenToWorld(this.viewport, { x: 0, y: 0 });
+    const c = screenToWorld(this.viewport, { x: width, y: height });
+    return (
+      b.minX >= Math.min(a.x, c.x) &&
+      b.maxX <= Math.max(a.x, c.x) &&
+      b.minY >= Math.min(a.y, c.y) &&
+      b.maxY <= Math.max(a.y, c.y)
+    );
   }
 
   /** Serialize the current plan for storage (version 3, multi-floor). */
