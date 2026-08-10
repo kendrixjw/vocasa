@@ -828,6 +828,40 @@ export class Editor {
     });
   }
 
+  /**
+   * World bounds of one floor's content, or null when that floor is empty.
+   * Unlike `contentBounds` this doesn't fall back to default framing — the
+   * caller (booklet export) needs to know a floor is blank.
+   */
+  floorBounds(floorId: string): Bounds | null {
+    return extents({ ...this.doc, entities: this.floorEntities(floorId) });
+  }
+
+  /**
+   * Render any floor cleanly, without switching to it.
+   *
+   * Export needs every floor, but `switchFloor` resets the undo history by
+   * design — exporting must never cost the user their history. Rendering only
+   * reads, so this swaps the entity array for the duration of the draw and puts
+   * it back. History, selection, stash, and the active floor are untouched.
+   */
+  renderFloorThumbnail(
+    ctx: CanvasRenderingContext2D,
+    floorId: string,
+    width: number,
+    height: number,
+    dpr = 1,
+    opts?: { grid?: boolean; background?: string },
+  ): void {
+    const prev = this.doc.entities;
+    this.doc.entities = this.floorEntities(floorId);
+    try {
+      this.renderThumbnail(ctx, width, height, dpr, opts);
+    } finally {
+      this.doc.entities = prev;
+    }
+  }
+
   private renderScene(
     ctx: CanvasRenderingContext2D,
     vp: Viewport,
