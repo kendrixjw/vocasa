@@ -95,7 +95,9 @@ report a clear error but hand editing still works.
   figure (read-only — they can't re-run it at a different finish level).
 - **Save** is automatic (~2s debounce) plus Ctrl/Cmd+S; your plans show as
   thumbnails on the dashboard.
-- **Share** exports a clean PNG or PDF.
+- **Share** exports a clean PNG, PDF, or DXF of the current floor — or a
+  **whole-home booklet**: a multi-page PDF with a cover (totals, and the cost
+  estimate if there is one) and a measured page per floor.
 
 ## Architecture
 
@@ -121,7 +123,8 @@ lib/
   voice/speech.ts        Web Speech API wrapper (mic = just a transcript source)
   persistence/           serialize/load, Supabase CRUD, thumbnails
   cost/estimate.ts       rough build/reno cost from room areas (pure, no AI)
-  export/exportPlan.ts   PNG / PDF rendering
+  export/exportPlan.ts   PNG / PDF / DXF rendering (current floor)
+  export/booklet.ts      whole-home PDF: cover + a page per floor
   supabase/              browser + server clients, session hook, config
 app/
   page.tsx               dashboard / auth gate / local-mode fallback

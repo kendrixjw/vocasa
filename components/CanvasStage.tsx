@@ -17,6 +17,7 @@ import { siteUrl } from "@/lib/supabase/config";
 import { isPlanData } from "@/lib/persistence/plan";
 import { makeThumbnail } from "@/lib/persistence/thumbnail";
 import { exportPng, exportPdf, exportDxf } from "@/lib/export/exportPlan";
+import { exportBooklet } from "@/lib/export/booklet";
 import RedesignBridge from "@/components/RedesignBridge";
 import DecorPanel from "@/components/DecorPanel";
 import CostPanel from "@/components/CostPanel";
@@ -414,12 +415,13 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   }, [shareUrl]);
 
   const doExport = useCallback(
-    async (fmt: "png" | "pdf" | "dxf") => {
+    async (fmt: "png" | "pdf" | "dxf" | "booklet") => {
       setExportOpen(false);
       setExporting(true);
       try {
         if (fmt === "png") exportPng(editor, nameRef.current);
         else if (fmt === "dxf") exportDxf(editor, nameRef.current);
+        else if (fmt === "booklet") await exportBooklet(editor, nameRef.current);
         else await exportPdf(editor, nameRef.current);
       } finally {
         setExporting(false);
@@ -1225,6 +1227,16 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
                   className="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100"
                 >
                   Download PDF
+                  <span className="block text-[11px] text-neutral-400">This floor</span>
+                </button>
+                <button
+                  onClick={() => void doExport("booklet")}
+                  className="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition hover:bg-neutral-100"
+                >
+                  Whole-home booklet
+                  <span className="block text-[11px] text-neutral-400">
+                    Cover + every floor
+                  </span>
                 </button>
                 <button
                   onClick={() => void doExport("dxf")}
