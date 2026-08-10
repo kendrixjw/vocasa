@@ -76,6 +76,11 @@ report a clear error but hand editing still works.
   (yard) module. Renders are inspirational — **not to scale, not editable** — and
   kept visibly distinct from your precise plan. Metered: the first 2 renders per
   module are free, then each costs a credit (buy packs or a monthly plan).
+- **Ready-made rooms** (Rooms) drop a furnished kitchen, bath, bedroom, living
+  room, dining room, or office as one undo step. These are **real walls and real
+  furniture**, not a fixed asset — the room measures itself from the wall graph
+  like any other, and everything is movable. New rooms land clear of what you've
+  already drawn.
 - **By hand:** draw walls, drag/rotate/resize furniture, place doors/windows. Rooms
   auto-detect from enclosed walls with live square footage. Everything undoes
   (Ctrl/Cmd+Z).
@@ -104,6 +109,7 @@ lib/
   commands.ts            concrete reversible commands (Add/Delete/Transform/… + ApplyAIBatch)
   model/                 semantic entities: wall, room, furniture, opening, document
   rooms/                 auto-room detection (planar face traversal) + name-preserving sync
+                         + templates.ts (ready-made furnished rooms)
   furniture/             data-driven furniture library + snapping
   tools/                 select / draw-wall / place-furniture / place-opening state machines
   ai/
