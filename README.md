@@ -21,6 +21,8 @@ never images.** Every dimension is imperial, stored internally in inches.
 - **Vercel AI Gateway** (`ai` SDK) for premium image-to-image redesign renders
 - **Stripe** for metered render credits (packs + subscription tiers)
 - **jsPDF** for PDF export
+- **three.js** + **react-three-fiber** for the read-only 3D walkthrough
+  (lazy-loaded — it never enters the main bundle)
 
 ## Getting started
 
@@ -81,6 +83,10 @@ report a clear error but hand editing still works.
   furniture**, not a fixed asset — the room measures itself from the wall graph
   like any other, and everything is movable. New rooms land clear of what you've
   already drawn.
+- **3D walkthrough** (3D) renders the current floor as a real space: **Inspect**
+  to orbit, or **Walk** for first-person mouse-look + WASD at eye level. Doors
+  and windows you placed become actual openings in the walls. It is **read-only**
+  — a view of the plan, never a second place to edit it.
 - **By hand:** draw walls, drag/rotate/resize furniture, place doors/windows. Rooms
   auto-detect from enclosed walls with live square footage. Everything undoes
   (Ctrl/Cmd+Z).
@@ -123,6 +129,7 @@ lib/
   voice/speech.ts        Web Speech API wrapper (mic = just a transcript source)
   persistence/           serialize/load, Supabase CRUD, thumbnails
   cost/estimate.ts       rough build/reno cost from room areas (pure, no AI)
+  render/scene3d.ts      Document -> 3D scene (walls sliced around openings); no three.js
   export/exportPlan.ts   PNG / PDF / DXF rendering (current floor)
   export/booklet.ts      whole-home PDF: cover + a page per floor
   supabase/              browser + server clients, session hook, config
@@ -168,9 +175,11 @@ manually; everything else has unit coverage.
 ## Scope (v1)
 
 In: multiple floors, imperial units, voice + hand editing, save/load, PNG/PDF/DXF
-export, dimensions/annotations, photo input (photo → editable plan), share links +
-comments, AI decor suggestions, a rough cost estimate, and premium redesign
+export + whole-home booklet, dimensions/annotations, photo input (photo →
+editable plan), share links + comments, AI decor suggestions, a rough cost
+estimate, ready-made rooms, a **read-only 3D walkthrough**, and premium redesign
 renders (paid, metered).
-Out (deliberately): DWG, 3D, arcs/splines — this is a consumer tool, not a
-blueprint editor. Redesign renders stay clearly separate: inspirational images,
-never editable or to-scale geometry.
+Out (deliberately): DWG, arcs/splines — this is a consumer tool, not a blueprint
+editor. Two things stay deliberately one-way: the 3D view **renders** the plan
+and never edits it (the 2D canvas remains the single source of truth), and
+redesign renders stay inspirational images, never editable or to-scale geometry.

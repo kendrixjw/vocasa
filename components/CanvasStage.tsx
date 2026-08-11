@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import type { Point } from "@/lib/viewport";
 import { Editor } from "@/lib/editor";
 import { formatFeetInches } from "@/lib/units";
@@ -22,6 +23,8 @@ import RedesignBridge from "@/components/RedesignBridge";
 import DecorPanel from "@/components/DecorPanel";
 import CostPanel from "@/components/CostPanel";
 import TemplatePanel from "@/components/TemplatePanel";
+// three.js is heavy and 3D is optional — keep it out of the main bundle.
+const View3D = dynamic(() => import("@/components/View3D"), { ssr: false });
 import { rooms, walls } from "@/lib/model/document";
 import { corners } from "@/lib/model/furniture";
 
@@ -276,6 +279,7 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
   doSaveRef.current = doSave;
 
   // --- Export (Phase 10): clean PNG / PDF to share --------------------------
+  const [show3D, setShow3D] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -909,6 +913,14 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
             {assistBusy ? "Thinking…" : "Design assist"}
           </button>
           <TemplatePanel editor={editor} />
+          <button
+            onClick={() => setShow3D(true)}
+            title="Walk through this floor in 3D"
+            className="flex items-center gap-1.5 rounded-lg bg-white/90 px-2.5 py-1 text-xs font-medium text-stone-700 shadow ring-1 ring-stone-200 transition hover:bg-white"
+          >
+            <CubeIcon />
+            3D
+          </button>
           <CostPanel editor={editor} />
           <DecorPanel editor={editor} />
           <RedesignBridge hasPlan={hasPlan} />
@@ -1251,6 +1263,8 @@ export default function CanvasStage({ planId = null, canPersist = false }: Persi
       </div>
 
       {/* Right: properties panel for the current selection */}
+      {show3D && <View3D editor={editor} onClose={() => setShow3D(false)} />}
+
       {editor.selectedRoom && editingRoom && (
         <RoomPanel
           key={editor.selectedRoom.id}
@@ -1589,6 +1603,16 @@ function ShareIcon() {
       <circle cx="18" cy="19" r="3" />
       <line x1="8.6" y1="10.6" x2="15.4" y2="6.4" />
       <line x1="8.6" y1="13.4" x2="15.4" y2="17.6" />
+    </svg>
+  );
+}
+
+function CubeIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+      <path d="m3.3 7 8.7 5 8.7-5" />
+      <path d="M12 22V12" />
     </svg>
   );
 }
