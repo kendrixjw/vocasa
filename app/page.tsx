@@ -10,7 +10,7 @@ export default function Landing() {
   const { configured, loading, user } = useSession();
 
   return (
-    <div className="flex min-h-screen w-full flex-col items-center justify-center bg-stone-50 px-6 py-12 text-center">
+    <div className="flex h-screen w-full flex-col items-center justify-center overflow-y-auto bg-stone-50 px-6 py-12 text-center">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/brand/vocasa-lockup.png"
