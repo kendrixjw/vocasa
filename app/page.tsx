@@ -52,6 +52,11 @@ export default function Landing() {
           </>
         )}
       </div>
+      <p className="mt-10 text-xs text-stone-500">
+        <a href="https://sovereignvalorgroup.com" className="hover:text-brand hover:underline">
+          A Sovereign Valor Group venture
+        </a>
+      </p>
     </div>
   );
 }
